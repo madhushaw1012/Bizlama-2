@@ -1,0 +1,323 @@
+<main class="screen receipts-screen">
+    <header class="page-heading">
+        <div>
+            <p class="eyebrow">Purchase capture</p>
+            <h1>Receipt inbox</h1>
+            <p class="screen-intro">
+                Upload a grocery receipt, persist any missing lines, review inventory
+                mappings and expiry evidence, then confirm the saved version.
+            </p>
+        </div>
+    </header>
+
+    <section class="receipt-layout">
+        <div class="receipt-column">
+            <article class="screen-card upload-card">
+                <div>
+                    <p class="eyebrow">Receipt</p>
+                    <h2>Upload a photo or PDF</h2>
+                    <p>
+                        BizLaMa prepares a server-owned review. Nothing enters stock
+                        until you save and confirm it.
+                    </p>
+                </div>
+
+                <label class="file-action" data-tooltip="Upload JPEG, PNG, WebP or PDF up to 10 MB">
+                    <input type="file"
+                        accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
+                        (change)="chooseFile($event)" [disabled]="loading()">
+                    <span>{{ uploading() ? 'Processing...' : 'Choose receipt' }}</span>
+                </label>
+            </article>
+
+            @if (notice(); as message) {
+            <p class="message inline-message">{{ message }}</p>
+            }
+            @if (error(); as message) {
+            <p class="message inline-message error-message" role="alert"
+                [attr.data-state]="conflict() ? 'conflict' : 'failed'">
+                <strong>{{ conflict() ? 'Version conflict.' : 'Request failed.' }}</strong> {{ message }}
+            </p>
+            }
+
+            <article class="screen-card">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">History</p>
+                        <h2>Uploaded receipts</h2>
+                    </div>
+                    <span class="count-badge">{{ receipts().length }}</span>
+                </div>
+
+                @for (receipt of receipts(); track receipt.id) {
+                <button type="button" class="receipt-history-row" (click)="open(receipt)"
+                    [disabled]="loading()">
+                    <div>
+                        <strong>{{ receipt.originalFilename }}</strong>
+                        <small>
+                            {{ receipt.merchant || 'Merchant not detected' }} ·
+                            {{ receipt.createdAt | date: 'medium' }} · v{{ receipt.version }}
+                        </small>
+                    </div>
+
+                    <span class="status-pill"
+                        [class.good]="receipt.status === 'CONFIRMED'"
+                        [class.critical-pill]="receipt.status === 'FAILED' || !!receipt.failureCode">
+                        {{ statusLabel(receipt) }}
+                    </span>
+                </button>
+                } @empty {
+                <div class="empty-state">
+                    <strong>No receipts yet</strong>
+                    <span>Your uploads will appear here.</span>
+                </div>
+                }
+            </article>
+        </div>
+
+        @if (selected(); as receipt) {
+        <article class="screen-card receipt-review">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Receipt review · version {{ receipt.version }}</p>
+                    <h2>{{ receipt.originalFilename }}</h2>
+                </div>
+
+                <span class="status-pill"
+                    [class.good]="receipt.status === 'CONFIRMED'"
+                    [class.critical-pill]="receipt.status === 'FAILED' || !!receipt.failureCode">
+                    {{ statusLabel(receipt) }}
+                </span>
+            </div>
+
+            @if (loading()) {
+            <p class="form-message" role="status">
+                {{ operation() === 'confirming'
+                    ? 'Confirming the saved receipt version...'
+                    : operation() === 'retrying'
+                        ? 'Retrying automatic extraction against the private evidence...'
+                        : 'Saving persisted receipt data...' }}
+            </p>
+            }
+
+            @if (receipt.status === 'REVIEW_REQUIRED' && receipt.failureCode) {
+            <div class="empty-state receipt-failure" role="alert">
+                <strong>Automatic extraction needs attention</strong>
+                <span>{{ receipt.failureCode }}</span>
+                <span>{{ receipt.failureMessage }}</span>
+                @if (!receipt.items.length) {
+                <button type="button" class="secondary-action"
+                    (click)="retryExtraction()" [disabled]="loading()">
+                    {{ operation() === 'retrying'
+                        ? 'Retrying extraction...'
+                        : 'Retry automatic extraction' }}
+                </button>
+                }
+            </div>
+            }
+
+            @if (receipt.status === 'FAILED') {
+            <div class="empty-state receipt-failure" role="alert">
+                <strong>Receipt processing failed</strong>
+                <span>{{ receipt.failureCode || 'PROCESSING_FAILED' }}</span>
+                <span>{{ receipt.failureMessage || 'Upload a clearer file to try again.' }}</span>
+            </div>
+            } @else if (receipt.status === 'UPLOADED' || receipt.status === 'EXTRACTING') {
+            <div class="empty-state">
+                <strong>Receipt processing is still in progress</strong>
+                <span>Refresh to load the latest persisted state.</span>
+                <button type="button" class="secondary-action" (click)="refreshSelected()"
+                    [disabled]="loading()">Refresh receipt</button>
+            </div>
+            } @else {
+            <div class="receipt-meta">
+                <label>
+                    Merchant
+                    <input [ngModel]="receipt.merchant" disabled>
+                </label>
+
+                <label>
+                    Purchase date
+                    <input type="date" [ngModel]="receipt.purchaseDate"
+                        (ngModelChange)="updatePurchaseDate($event)"
+                        [disabled]="!isReviewable(receipt) || loading()">
+                </label>
+            </div>
+
+            @if (receipt.status === 'CONFIRMED') {
+            <p class="form-message success-text">
+                Confirmed {{ receipt.confirmedAt | date: 'medium' }}. These persisted
+                lines are read-only.
+            </p>
+            }
+
+            <div class="receipt-lines-heading">
+                <div>
+                    <strong>Persisted receipt lines</strong>
+                    <small>Uncheck a line to review it as rejected.</small>
+                </div>
+
+                @if (isReviewable(receipt)) {
+                <button class="secondary-action" type="button" (click)="startManualLine()"
+                    [disabled]="loading() || dirty() || !!manualLine()"
+                    data-tooltip="Persist an item the receipt reader missed">
+                    Add manual line
+                </button>
+                }
+            </div>
+
+            @if (manualLine(); as manual) {
+            <section class="manual-receipt-line">
+                <label>
+                    Printed name
+                    <input [ngModel]="manual.rawName"
+                        (ngModelChange)="updateManualLine('rawName', $event)"
+                        placeholder="Enter the product name shown" [disabled]="loading()">
+                </label>
+                <label>
+                    Quantity
+                    <input type="number" min="0.01" step="0.01"
+                        [ngModel]="manual.quantity"
+                        (ngModelChange)="updateManualLine('quantity', $event)"
+                        [disabled]="loading()">
+                </label>
+                <label>
+                    Unit
+                    <select [ngModel]="manual.unit"
+                        (ngModelChange)="updateManualLine('unit', $event)"
+                        [disabled]="loading()">
+                        @for (unit of units; track unit) {
+                        <option [value]="unit">{{ unit }}</option>
+                        }
+                    </select>
+                </label>
+                <label>
+                    Unit price <span class="optional">optional</span>
+                    <input type="number" min="0" step="0.01"
+                        [ngModel]="manual.unitPrice"
+                        (ngModelChange)="updateManualLine('unitPrice', $event)"
+                        [disabled]="loading()">
+                </label>
+                <div class="manual-receipt-actions">
+                    <button type="button" class="secondary-action" (click)="cancelManualLine()"
+                        [disabled]="loading()">Cancel</button>
+                    <button type="button" class="action-button" (click)="saveManualLine()"
+                        [disabled]="loading() || !manual.rawName.trim()">Persist line</button>
+                </div>
+            </section>
+            }
+
+            @for (item of receipt.items; track item.id; let index = $index) {
+            <div class="receipt-line secure-receipt-line" [class.rejected-line]="!item.selected">
+                <label class="check-control">
+                    <span class="sr-only">Include {{ item.rawName }}</span>
+                    <input type="checkbox" [ngModel]="item.selected"
+                        (ngModelChange)="updateLine(index, 'selected', $event)"
+                        [disabled]="!isReviewable(receipt) || loading()">
+                    <span></span>
+                </label>
+
+                <label>
+                    Printed name
+                    <input [ngModel]="item.rawName" disabled>
+                    <small>Source: {{ item.sourceQuantity }} {{ item.sourceUnit }}</small>
+                </label>
+
+                <label>
+                    Maps to
+                    <select [ngModel]="item.ingredientId || ''"
+                        (ngModelChange)="chooseIngredient(index, $event)"
+                        [disabled]="!isReviewable(receipt) || loading() || !item.selected">
+                        <option value="">Choose ingredient</option>
+                        @for (ingredient of ingredients(); track ingredient.id) {
+                        <option [value]="ingredient.id">{{ ingredient.name }}</option>
+                        }
+                    </select>
+                </label>
+
+                <label>
+                    Quantity
+                    <input type="number" min="0.01" step="0.01" [ngModel]="item.quantity"
+                        (ngModelChange)="updateLine(index, 'quantity', $event)"
+                        [disabled]="!isReviewable(receipt) || loading() || !item.selected">
+                </label>
+
+                <label>
+                    Unit
+                    <select [ngModel]="item.unit" (ngModelChange)="updateLine(index, 'unit', $event)"
+                        [disabled]="!isReviewable(receipt) || loading() || !item.selected">
+                        @for (unit of units; track unit) {
+                        <option [value]="unit">{{ unit }}</option>
+                        }
+                    </select>
+                </label>
+
+                <label>
+                    Expiry evidence
+                    <select [ngModel]="item.expiryProvenance"
+                        (ngModelChange)="updateExpiryProvenance(index, $event)"
+                        [disabled]="!isReviewable(receipt) || loading() || !item.selected">
+                        <option value="UNRESOLVED">Choose expiry source</option>
+                        <option value="PRINTED_DATE">Printed date</option>
+                        <option value="OWNER_CONFIRMED">Owner confirmed</option>
+                        <option value="REVIEWED_SHELF_LIFE_RULE">Reviewed shelf-life rule</option>
+                        @if (item.expiryProvenance === 'LEGACY_RECORDED') {
+                        <option value="LEGACY_RECORDED">Legacy recorded</option>
+                        }
+                    </select>
+                </label>
+
+                <label>
+                    Expiry date
+                    <input type="date" [ngModel]="item.expiresAt"
+                        (ngModelChange)="updateLine(index, 'expiresAt', $event)"
+                        [disabled]="!isReviewable(receipt) || loading() || !item.selected || item.expiryProvenance === 'REVIEWED_SHELF_LIFE_RULE'">
+                    @if (item.expiryProvenance === 'REVIEWED_SHELF_LIFE_RULE') {
+                    <small>Calculated by the server</small>
+                    }
+                </label>
+
+                <div class="line-confidence">
+                    <span>{{ item.reviewStatus }}</span>
+                    <small>{{ matchLabel(item) }} · {{ confidence(item) }}</small>
+                </div>
+            </div>
+            } @empty {
+            <div class="empty-state">
+                <strong>No persisted lines</strong>
+                <span>Add a manual line before saving the review.</span>
+            </div>
+            }
+
+            <div class="receipt-review-footer">
+                <p>
+                    Save writes the complete review against version {{ receipt.version }}.
+                    Confirmation then sends only this receipt ID, saved version and one retry-safe key.
+                </p>
+
+                <div class="review-actions">
+                    @if (isReviewable(receipt)) {
+                    <button class="secondary-action" type="button" (click)="saveReview()"
+                        [disabled]="loading() || !!manualLine() || !needsReview(receipt)">
+                        {{ operation() === 'saving-review' ? 'Saving...' : 'Save review' }}
+                    </button>
+                    }
+                    <button class="action-button" type="button" (click)="confirm()"
+                        [disabled]="loading() || !canConfirm(receipt)"
+                        [attr.data-tooltip]="canConfirm(receipt)
+                            ? 'Confirm the current persisted receipt version'
+                            : 'Save a complete review before confirming'">
+                        {{ receipt.status === 'CONFIRMED' ? 'Confirmed' : 'Confirm & add to stock' }}
+                    </button>
+                </div>
+            </div>
+            }
+        </article>
+        } @else {
+        <article class="screen-card empty-review">
+            <strong>Select or upload a receipt</strong>
+            <span>The persisted review workspace will open here.</span>
+        </article>
+        }
+    </section>
+</main>

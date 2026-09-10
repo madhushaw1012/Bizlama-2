@@ -1,0 +1,329 @@
+<main class="screen orders-screen">
+    <header class="page-heading orders-heading">
+        <div>
+            <p class="eyebrow">Orders</p>
+            <h1>{{ mode() === 'queue' ? 'Order queue' : 'New order' }}</h1>
+            <p class="screen-intro">
+                {{ mode() === 'queue'
+                ? 'Find an order, review its items, and move it through preparation.'
+                : 'Build and send a customer order without leaving the register.' }}
+            </p>
+        </div>
+
+        <div class="order-view-switch" role="group" aria-label="Order view">
+            <button type="button" [class.active]="mode() === 'queue'" (click)="showQueue()">
+                Order queue
+            </button>
+
+            <button type="button" [class.active]="mode() === 'new'" (click)="showNew()">
+                New order
+            </button>
+        </div>
+    </header>
+
+    @if (message()) {
+    <p class="inline-notice">{{ message() }}</p>
+    }
+
+    @if (mode() === 'queue') {
+    @if (summary(); as totals) {
+    <section class="page-stats order-stats" aria-label="Order summary">
+        <article>
+            <span>In preparation</span>
+            <strong>{{ totals.openOrders | number }}</strong>
+        </article>
+
+        <article>
+            <span>Ready</span>
+            <strong>{{ totals.readyOrders | number }}</strong>
+        </article>
+
+        <article>
+            <span>Completed today</span>
+            <strong>{{ totals.completedToday | number }}</strong>
+        </article>
+
+        <article>
+            <span>Today's sales</span>
+            <strong>{{ totals.revenueToday | number: '1.0-0' }}</strong>
+        </article>
+    </section>
+    }
+
+    <section class="screen-card data-workspace">
+        <div class="data-toolbar">
+            <label class="search-field">
+                <span class="sr-only">Search orders</span>
+                <input type="search" [ngModel]="orderSearch()" (ngModelChange)="orderSearchChanged($event)"
+                    placeholder="Search by order number">
+            </label>
+
+            <label class="compact-filter">
+                <span>Status</span>
+                <select [ngModel]="status()" (ngModelChange)="statusChanged($event)">
+                    <option value="all">All orders</option>
+                    <option value="QUEUED">Queued</option>
+                    <option value="PREPARING">Preparing</option>
+                    <option value="READY">Ready</option>
+                    <option value="COMPLETED">Completed</option>
+                    <option value="CANCELLED">Cancelled</option>
+                </select>
+            </label>
+        </div>
+
+        @if (orderPage(); as data) {
+        <div class="table-scroll">
+            <table class="data-table interactive-table">
+                <thead>
+                    <tr>
+                        <th>Order</th>
+                        <th>Placed</th>
+                        <th>Items</th>
+                        <th>Status</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    @for (order of data.items; track order.id) {
+                    <tr tabindex="0" (click)="openOrder(order.id)" (keydown.enter)="openOrder(order.id)">
+                        <td>
+                            <strong>{{ order.id }}</strong>
+                        </td>
+                        <td>{{ order.createdAt | date: 'medium' }}</td>
+                        <td>{{ order.itemCount }}</td>
+                        <td>
+                            <span class="status-pill"
+                                [class.good]="order.status === 'READY' || order.status === 'COMPLETED'">
+                                {{ statusLabel(order.status) }}
+                            </span>
+                        </td>
+                        <td>
+                            <strong>{{ order.total | number: '1.0-2' }}</strong>
+                        </td>
+                    </tr>
+                    } @empty {
+                    <tr>
+                        <td colspan="5">
+                            <div class="empty-state">
+                                <strong>No matching orders</strong>
+                                <span>Try another search or status.</span>
+                            </div>
+                        </td>
+                    </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <footer class="pagination-bar">
+            <span>{{ data.totalItems | number }} matching orders</span>
+
+            <div>
+                <button class="secondary-action" type="button" (click)="previousPage()" [disabled]="data.page === 0">
+                    Previous
+                </button>
+
+                <span>
+                    Page {{ data.totalPages ? data.page + 1 : 0 }} of {{ data.totalPages }}
+                </span>
+
+                <button class="secondary-action" type="button" (click)="nextPage()"
+                    [disabled]="data.page + 1 >= data.totalPages">
+                    Next
+                </button>
+            </div>
+        </footer>
+        }
+    </section>
+
+    @if (selectedOrder(); as order) {
+    <div class="detail-backdrop" (click)="closeOrder()"></div>
+
+    <aside class="detail-drawer" aria-label="Order details">
+        <div class="drawer-heading">
+            <div>
+                <p class="eyebrow">Order details</p>
+                <h2>{{ order.id }}</h2>
+            </div>
+
+            <button class="icon-button" type="button" aria-label="Close order details" (click)="closeOrder()">x</button>
+        </div>
+
+        <div class="drawer-meta">
+            <span class="status-pill">
+                {{ statusLabel(order.status) }}
+            </span>
+            <span>{{ order.createdAt | date: 'medium' }}</span>
+        </div>
+
+        <div class="drawer-lines">
+            @for (item of order.items; track item.dishId) {
+            <div>
+                <span>
+                    <strong>{{ dishName(item.dishId) }}</strong>
+                    <small>
+                        {{ item.quantity }} × Rs. {{ item.unitPrice | number: '1.0-2' }}
+                    </small>
+                </span>
+
+                <b>
+                    {{ item.quantity * item.unitPrice | number: '1.0-2' }}
+                </b>
+            </div>
+            }
+        </div>
+
+        <div class="drawer-total">
+            <span>Total</span>
+            <strong>{{ order.total | number: '1.0-2' }}</strong>
+        </div>
+
+        @if (nextStatus(order.status); as next) {
+        <button class="action-button wide-action" type="button" (click)="advanceOrder(order)">
+            Mark as {{ statusLabel(next) }}
+        </button>
+        } @else if (order.status === 'PREPARING') {
+        <p class="inline-notice">
+            Ready is recorded after the approved preparation action is completed.
+        </p>
+        }
+    </aside>
+    }
+    } @else {
+    <section class="register-shell">
+        <nav class="menu-categories" aria-label="Menu categories">
+            <div class="category-heading">
+                <span>Categories</span>
+                <small>{{ menu().length }} dishes</small>
+            </div>
+
+            <button type="button" [class.active]="selectedCategory() === 'all'" (click)="chooseCategory('all')">
+                <span>All menu</span>
+                <b>{{ menu().length }}</b>
+            </button>
+
+            @for (category of menuCategories(); track category.name) {
+            <button type="button" [class.active]="selectedCategory() === category.name"
+                (click)="chooseCategory(category.name)">
+                <span>{{ category.name }}</span>
+                <b>{{ category.count }}</b>
+            </button>
+            }
+        </nav>
+
+        <section class="menu-browser" aria-label="Menu items">
+            <div class="menu-toolbar">
+                <div>
+                    <p class="eyebrow">
+                        {{ selectedCategory() === 'all' ? 'Full menu' : selectedCategory() }}
+                    </p>
+                    <h2>Choose dishes</h2>
+                </div>
+
+                <label class="register-search">
+                    <span class="sr-only">Search menu</span>
+                    <input type="search" [ngModel]="menuSearch()" (ngModelChange)="menuSearch.set($event)"
+                        placeholder="Search dishes">
+                </label>
+            </div>
+
+            <div class="menu-result-line">
+                <span>
+                    {{ filteredMenu().length }}
+                    {{ filteredMenu().length === 1 ? 'dish' : 'dishes' }}
+                </span>
+                <small>select a dish to add it</small>
+            </div>
+
+            <div class="menu-grid">
+                @for (item of filteredMenu(); track item.id) {
+                <button class="menu-item-card" type="button" (click)="add(item.id)"
+                    [attr.aria-label]="'Add ' + item.name + ' to order'">
+                    <span class="menu-item-category">{{ item.categoryName }}</span>
+
+                    <strong>{{ item.name }}</strong>
+
+                    <span class="menu-item-footer">
+                        <b>{{ item.price | number: '1.0-2' }}</b>
+                        <em [class.visible]="quantity(item.id)">
+                            {{ quantity(item.id) ? quantity(item.id) + ' added' : '+' }}
+                        </em>
+                    </span>
+                </button>
+                } @empty {
+                <div class="empty-state menu-empty">
+                    <strong>No dishes found</strong>
+                    <span>Try another category or search.</span>
+                </div>
+                }
+            </div>
+        </section>
+
+        <aside class="cart-card" aria-label="Current order">
+            <div class="cart-heading">
+                <div>
+                    <p class="eyebrow">Current order</p>
+                    <h2>Counter order</h2>
+                </div>
+
+                <span>
+                    {{ totalItems }}
+                    {{ totalItems === 1 ? 'item' : 'items' }}
+                </span>
+            </div>
+
+            <div class="cart-lines">
+                @for (item of menu(); track item.id) {
+                @if (quantity(item.id)) {
+                <div>
+                    <span>
+                        <strong>{{ item.name }}</strong>
+                        <small>{{ item.price | number: '1.0-2' }} each</small>
+                    </span>
+
+                    <span class="quantity-control">
+                        <button type="button" (click)="remove(item.id)" [attr.aria-label]="'Remove one ' + item.name">
+                            −
+                        </button>
+
+                        <b>{{ quantity(item.id) }}</b>
+
+                        <button type="button" (click)="add(item.id)" [attr.aria-label]="'Add one ' + item.name">
+                            +
+                        </button>
+                    </span>
+                </div>
+                }
+                }
+
+                @if (!totalItems) {
+                <div class="cart-empty">
+                    <span aria-hidden="true"></span>
+                    <strong>Your order is empty</strong>
+                    <small>Choose a category, then select a dish.</small>
+                </div>
+                }
+            </div>
+
+            <div class="cart-summary">
+                <span>
+                    <small>Items</small>
+                    <b>{{ totalItems }}</b>
+                </span>
+
+                <span class="cart-total">
+                    <small>Total</small>
+                    <strong>{{ total | number: '1.0-2' }}</strong>
+                </span>
+            </div>
+
+            <button class="action-button wide-action place-order-action" type="button" [disabled]="!totalItems"
+                (click)="placeOrder()">
+                Send to kitchen
+                <span></span>
+            </button>
+        </aside>
+    </section>
+    }
+</main>

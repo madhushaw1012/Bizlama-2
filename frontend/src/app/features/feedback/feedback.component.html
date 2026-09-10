@@ -1,0 +1,162 @@
+<main class="screen">
+    <header class="page-heading">
+        <div>
+            <p class="eyebrow">Customer insight</p>
+            <h1>Feedback &amp; experiments</h1>
+            <p class="screen-intro">
+                Capture dish-level comments, correct mistaken entries, and turn repeated themes into
+                controlled—not automatic—recipe experiments.
+            </p>
+        </div>
+    </header>
+
+    @if (message()) {
+    <p class="message" role="status">{{ message() }}</p>
+    }
+
+    @if (loading()) {
+    <section class="message" aria-live="polite">
+        <p>Loading feedback and controlled experiments.</p>
+    </section>
+    } @else if (loadError()) {
+    <section class="message error-message" role="alert">
+        <strong>Feedback workspace unavailable</strong>
+        <p>{{ loadError() }}</p>
+        <button class="secondary-action" type="button" (click)="reload()">Try again</button>
+    </section>
+    } @else if (!availableDishes().length) {
+    <section class="screen-card empty-state">
+        <strong>No active recipe versions</strong>
+        <span>Add and activate a recipe before collecting dish feedback.</span>
+    </section>
+    } @else {
+    <section class="screen-card section-spaced">
+        <label>
+            Dish and active recipe
+            <select [ngModel]="selectedDishId()" (ngModelChange)="selectDish($event)">
+                @for (dish of availableDishes(); track dish.id) {
+                <option [value]="dish.id">{{ dish.name }}</option>
+                }
+            </select>
+        </label>
+
+        @if (selectedRecipe(); as recipe) {
+        <p class="screen-intro">
+            Feedback and experiment evidence are linked to recipe version {{ recipe.versionNumber }}.
+        </p>
+        }
+    </section>
+
+    @if (selectedDish(); as dish) {
+    <section class="screen-grid">
+        <article class="screen-card">
+            <p class="eyebrow">Capture feedback</p>
+            <h2>{{ dish.name }}</h2>
+
+            <label>
+                Customer comment
+                <textarea [ngModel]="comment()" (ngModelChange)="comment.set($event)"
+                    [disabled]="saving()" placeholder="For example: The dish was too dry"></textarea>
+            </label>
+
+            <label>
+                Rating
+                <select [ngModel]="rating()" (ngModelChange)="rating.set($event)" [disabled]="saving()">
+                    <option [ngValue]="5">5 - Excellent</option>
+                    <option [ngValue]="4">4 - Good</option>
+                    <option [ngValue]="3">3 - Average</option>
+                    <option [ngValue]="2">2 - Poor</option>
+                    <option [ngValue]="1">1 - Bad</option>
+                </select>
+            </label>
+
+            <button class="action-button" type="button" (click)="add()"
+                [disabled]="saving() || !comment().trim() || !selectedRecipe()">
+                {{ saving() ? 'Saving...' : 'Save feedback' }}
+            </button>
+
+            <div class="section-heading subsection-heading">
+                <h2>Recent comments</h2>
+                <span class="count-badge">{{ comments().length }}</span>
+            </div>
+
+            @if (commentsLoading()) {
+            <p class="form-message" aria-live="polite">Loading recent comments.</p>
+            } @else if (commentsError()) {
+            <p class="form-message error-text" role="alert">{{ commentsError() }}</p>
+            } @else {
+            @for (feedback of comments(); track feedback.id) {
+            <div class="list-row">
+                <div>
+                    <strong>"{{ feedback.text }}"</strong>
+                    <small>
+                        {{ feedback.rating }}/5.
+                        {{ feedback.occurredAt | date: 'mediumDate' }}
+                        {{ feedback.source }}
+                    </small>
+                </div>
+
+                <button class="icon-button" type="button" (click)="remove(feedback.id)"
+                    aria-label="Delete feedback" data-tooltip="Delete this mistaken feedback entry">x</button>
+            </div>
+            } @empty {
+            <div class="empty-state">
+                <strong>No feedback yet</strong>
+                <span>Comments for this active recipe version will appear here.</span>
+            </div>
+            }
+            }
+        </article>
+
+        <aside class="screen-card experiment-card">
+            @if (experimentLoading()) {
+            <p class="form-message" aria-live="polite">Loading controlled experiment.</p>
+            } @else if (experimentError()) {
+            <div class="empty-state" role="alert">
+                <strong>Experiment unavailable</strong>
+                <span>{{ experimentError() }}</span>
+                <button class="secondary-action" type="button" (click)="retryExperiment()">
+                    Try again
+                </button>
+            </div>
+            } @else if (experiment(); as item) {
+            <p class="eyebrow">Pattern detected</p>
+            <h2>{{ item.theme }}</h2>
+
+            <p class="screen-intro">
+                {{ item.themeCount }} of {{ item.feedbackCount }} recent comments meet the experiment
+                threshold for {{ item.dish }}.
+            </p>
+
+            <div class="experiment-change">
+                <small>Proposed controlled test</small>
+                <strong>
+                    {{ item.metricName }}:
+                    {{ item.currentValue }} {{ item.unit }} →
+                    {{ item.proposedValue }} {{ item.unit }}
+                </strong>
+                <span>{{ item.testDurationDays }} days</span>
+            </div>
+
+            @if (item.status === 'PROPOSED') {
+            <button class="action-button wide-action" type="button" (click)="approve()"
+                [disabled]="approving()" data-tooltip="Start the test without changing the permanent recipe">
+                {{ approving() ? 'Approving...' : 'Approve experiment' }}
+            </button>
+            } @else {
+            <p class="approval-note">
+                Experiment is active. BizLaMa will collect evidence; it will not silently make the
+                permanent recipe change.
+            </p>
+            }
+            } @else {
+            <div class="empty-state">
+                <strong>No controlled experiment</strong>
+                <span>There is no experiment proposal for {{ dish.name }}.</span>
+            </div>
+            }
+        </aside>
+    </section>
+    }
+    }
+</main>

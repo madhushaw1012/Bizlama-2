@@ -1,0 +1,574 @@
+<main class="screen recipe-screen">
+    <header class="page-heading">
+        <div>
+            <p class="eyebrow">Recipe intelligence</p>
+            <h1>{{ creating() ? 'Add a menu item' : 'Recipes & prep' }}</h1>
+            <p class="screen-intro">
+                {{ creating()
+                ? 'Create the sellable dish and its complete first recipe together.'
+                : 'Manage complete recipes with any number of ingredients and steps. Later changes require owner
+                approval before they go live.' }}
+            </p>
+        </div>
+
+        <button class="secondary-action" type="button" (click)="creating() ? cancelCreate() : startCreate()"
+            [attr.data-tooltip]="
+        creating()
+          ? 'Return without saving this item'
+          : 'Create a dish and its first active recipe'
+      ">
+            {{ creating() ? 'Back to recipes' : '+ Add menu item' }}
+        </button>
+    </header>
+
+    @if (message()) {
+    <p class="message" role="status">{{ message() }}</p>
+    }
+
+    @if (provenanceReviewCount() > 0) {
+    <section class="screen-card provenance-review-card" aria-labelledby="provenance-review-title">
+        <div class="provenance-review-heading">
+            <div>
+                <p class="eyebrow">Owner evidence review</p>
+                <h2 id="provenance-review-title">Legacy records need confirmation</h2>
+            </div>
+            <span class="count-badge">{{ provenanceReviewCount() }}</span>
+        </div>
+
+        <p class="provenance-review-intro">
+            These retained records remain visible, but are excluded from exact demand, governed recommendations and
+            operational analytics until their provenance is confirmed. Confirmation attests the value shown; it never
+            rewrites accepted history.
+        </p>
+
+        <label class="provenance-reason">
+            Evidence note
+            <input type="text" [ngModel]="provenanceReason()"
+                (ngModelChange)="provenanceReason.set($event)"
+                [disabled]="!canReviewProvenance()"
+                placeholder="Describe the source checked before confirming">
+            <small>This note is retained in the immutable review audit.</small>
+        </label>
+
+        @if (!canReviewProvenance()) {
+        <p class="provenance-owner-note">An owner or administrator must complete these attestations.</p>
+        }
+
+        <div class="provenance-review-grid">
+            @if (provenanceReviews().orderRecipePins.length > 0) {
+            <section class="provenance-review-group">
+                <h3>Order recipe pins</h3>
+                @for (review of provenanceReviews().orderRecipePins; track review.orderId + ':' + review.lineNumber) {
+                <article class="provenance-review-row">
+                    <div>
+                        <strong>{{ review.dishName }} · order {{ review.orderId }} · line {{ review.lineNumber }}</strong>
+                        <small>
+                            Ordered {{ review.orderedQuantity }} · prepared {{ review.preparedQuantity }} ·
+                            {{ review.orderedAt | date:'medium' }}
+                        </small>
+                        <small>Provisional recipe: <code>{{ review.provisionalRecipeVersionId }}</code></small>
+                    </div>
+                    @if (canReviewProvenance()) {
+                    <button class="small-action" type="button" (click)="confirmOrderRecipePin(review)"
+                        [disabled]="!provenanceReason().trim() || reviewingProvenance() !== null">
+                        {{ reviewingProvenance() === 'order:' + review.orderId + ':' + review.lineNumber
+                        ? 'Confirming...' : 'Confirm exact pin' }}
+                    </button>
+                    }
+                </article>
+                }
+            </section>
+            }
+
+            @if (provenanceReviews().recipeYields.length > 0) {
+            <section class="provenance-review-group">
+                <h3>Recipe yields</h3>
+                @for (review of provenanceReviews().recipeYields; track review.recipeVersionId) {
+                <article class="provenance-review-row">
+                    <div>
+                        <strong>{{ review.dishName }}</strong>
+                        <small>
+                            Retained yield: {{ review.yieldQuantity }} {{ review.yieldUnit }} ·
+                            recipe <code>{{ review.recipeVersionId }}</code>
+                        </small>
+                    </div>
+                    @if (canReviewProvenance()) {
+                    <button class="small-action" type="button" (click)="confirmLegacyYield(review)"
+                        [disabled]="!provenanceReason().trim() || reviewingProvenance() !== null">
+                        {{ reviewingProvenance() === 'yield:' + review.recipeVersionId
+                        ? 'Confirming...' : 'Confirm retained yield' }}
+                    </button>
+                    }
+                </article>
+                }
+            </section>
+            }
+        </div>
+    </section>
+    }
+
+    @if (creating()) {
+    <section class="screen-card new-dish-card">
+        <div class="new-dish-heading">
+            <div>
+                <p class="eyebrow">New live item</p>
+                <h2>Dish details</h2>
+            </div>
+
+            <p>
+                All fields are required. Saving publishes recipe version 1 to the order menu.
+            </p>
+        </div>
+
+        <div class="new-dish-basics">
+            <label>
+                Dish name
+                <input type="text" placeholder="Enter the dish name" [ngModel]="newDishName()"
+                    (ngModelChange)="newDishName.set($event)">
+            </label>
+
+            <label>
+                Menu category
+                <select [ngModel]="newDishCategory()" (ngModelChange)="newDishCategory.set($event)">
+                    @for (category of categories(); track category.id) {
+                    <option [value]="category.id">
+                        {{ category.name }}
+                    </option>
+                    }
+                </select>
+            </label>
+
+            <label>
+                Selling price (₹)
+                <input type="number" min="1" step="1" placeholder="280" [ngModel]="newDishPrice()"
+                    (ngModelChange)="newDishPrice.set($event)">
+            </label>
+
+            <label>
+                Preparation time (minutes)
+                <input type="number" min="1" step="1" placeholder="25" [ngModel]="newDishPrepMinutes()"
+                    (ngModelChange)="newDishPrepMinutes.set($event)">
+            </label>
+
+            <label>
+                Recipe yield
+                <input type="number" min="1" step="1" [ngModel]="newDishYieldQuantity()"
+                    (ngModelChange)="newDishYieldQuantity.set($event)">
+            </label>
+
+            <label>
+                Yield unit
+                <input type="text" value="each" [ngModel]="newDishYieldUnit()"
+                    (ngModelChange)="newDishYieldUnit.set($event)"
+                    aria-describedby="new-yield-help">
+                <small id="new-yield-help">Use count or each; ingredient amounts are for this yield.</small>
+            </label>
+        </div>
+
+        <div class="new-recipe-grid">
+            <section class="creation-section">
+                <div class="recipe-section-heading">
+                    <div>
+                        <p class="eyebrow">Per recipe yield</p>
+                        <h3>Ingredients</h3>
+                        <p>Choose stock items and exact usage quantities.</p>
+                    </div>
+
+                    <button type="button" class="small-action" (click)="addNewDishIngredient()" [disabled]="
+                newDishIngredients().length === ingredients().length
+              " data-tooltip="Add another stock ingredient">
+                        Add ingredient
+                    </button>
+                </div>
+
+                <div class="creation-column-labels ingredient-labels" aria-hidden="true">
+                    <span></span>
+                    <span>Stock item</span>
+                    <span>Qty</span>
+                    <span>Unit</span>
+                    <span></span>
+                </div>
+
+                <div class="recipe-scroll-region">
+                    @for (
+                    ingredient of newDishIngredients();
+                    track $index;
+                    let index = $index
+                    ) {
+                    <div class="ingredient-editor-row">
+                        <span class="row-number">{{ index + 1 }}</span>
+
+                        <label>
+                            <span class="sr-only">Ingredient {{ index + 1 }}</span>
+                            <select [ngModel]="ingredient.ingredientId" (ngModelChange)="
+                      updateNewDishIngredient(index, 'ingredientId', $event)
+                    ">
+                                @for (option of ingredients(); track option.id) {
+                                <option [value]="option.id" [disabled]="ingredientAlreadySelected(option.id, index)">
+                                    {{ option.name }}
+                                </option>
+                                }
+                            </select>
+                        </label>
+
+                        <label>
+                            <span class="sr-only">Quantity</span>
+                            <input type="number" min="0.01" step="0.01" [ngModel]="ingredient.quantity" (ngModelChange)="
+                      updateNewDishIngredient(index, 'quantity', $event)
+                    ">
+                        </label>
+
+                        <label>
+                            <span class="sr-only">Unit</span>
+                            <input [ngModel]="ingredient.unit" (ngModelChange)="
+                      updateNewDishIngredient(index, 'unit', $event)
+                    ">
+                        </label>
+
+                        <button class="icon-button" type="button" (click)="removeNewDishIngredient(index)"
+                            [disabled]="newDishIngredients().length === 1" aria-label="Remove ingredient"
+                            data-tooltip="Remove this ingredient">x</button>
+                    </div>
+                    } @empty {
+                    <p class="empty-state">
+                        Add an inventory ingredient before creating a dish.
+                    </p>
+                    }
+                </div>
+            </section>
+
+            <section class="creation-section">
+                <div class="recipe-section-heading">
+                    <div>
+                        <p class="eyebrow">In order</p>
+                        <h3>Preparation steps</h3>
+                        <p>Keep each instruction clear for kitchen staff.</p>
+                    </div>
+
+                    <button type="button" class="small-action" (click)="addNewDishStep()"
+                        data-tooltip="Add another preparation step">
+                        + Add step
+                    </button>
+                </div>
+
+                <div class="creation-column-labels" aria-hidden="true">
+                    <span></span>
+                    <span>Instruction</span>
+                    <span></span>
+                </div>
+
+                <div class="recipe-scroll-region step-list">
+                    @for (
+                    step of newDishSteps();
+                    track $index;
+                    let index = $index
+                    ) {
+                    <div class="step-editor-row">
+                        <span class="step-number">{{ index + 1 }}</span>
+
+                        <label>
+                            <span class="sr-only">Step {{ index + 1 }}</span>
+                            <textarea rows="2" placeholder="Describe this preparation step" [ngModel]="step"
+                                (ngModelChange)="updateNewDishStep(index, $event)"></textarea>
+                        </label>
+
+                        <button class="icon-button" type="button" (click)="removeNewDishStep(index)"
+                            [disabled]="newDishSteps().length === 1" aria-label="Remove step"
+                            data-tooltip="Remove this preparation step">x</button>
+                    </div>
+                    }
+                </div>
+            </section>
+        </div>
+
+        <p>
+            <strong>Ready to publish?</strong>
+            The dish, recipe, ingredients, steps and audit entry are saved together.
+            Nothing is partially created.
+        </p>
+
+        <div class="form-actions">
+            <button class="secondary-action" type="button" (click)="cancelCreate()">
+                Cancel
+            </button>
+
+            <button class="action-button" type="button" (click)="createDish()"
+                [disabled]="!canCreateDish() || savingDish()"
+                data-tooltip="Publish the dish and recipe to the live menu">
+                {{ savingDish() ? 'Creating...' : 'Create dish & activate' }}
+            </button>
+        </div>
+    </section>
+    } @else {
+    <section class="screen-card recipe-library">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Library</p>
+                <h2>Choose a recipe version</h2>
+            </div>
+
+            <span class="count-badge" data-tooltip="Total recipe versions">
+                {{ recipes().length }}
+            </span>
+        </div>
+
+        <label class="recipe-search" for="recipe-search">
+            <span class="sr-only">Search recipes</span>
+            <input id="recipe-search" type="search" placeholder="Search by dish or change reason" [ngModel]="search()"
+                (ngModelChange)="search.set($event)">
+        </label>
+
+        <div class="recipe-list" tabindex="0" data-tooltip="Scroll to see more recipe versions">
+            @for (recipe of filteredRecipes(); track recipe.id) {
+            <button class="recipe-list-row" type="button" (click)="choose(recipe)"
+                [class.selected]="selected()?.id === recipe.id" [attr.aria-pressed]="selected()?.id === recipe.id">
+                <div>
+                    <strong>{{ dishName(recipe.dishId) }}</strong>
+                    <small>
+                        Version {{ recipe.versionNumber }} · {{ recipe.changeReason }}
+                    </small>
+                </div>
+
+                <span class="status-pill" [class.good]="recipe.active">
+                    {{ recipe.active ? 'Active' : 'Proposal' }}
+                </span>
+            </button>
+            } @empty {
+            <p class="empty-state">
+                No recipe versions match that search.
+            </p>
+            }
+        </div>
+    </section>
+
+    @if (selected(); as recipe) {
+    <section class="screen-card recipe-editor">
+        <div class="section-heading recipe-editor-heading">
+            <div>
+                <p class="eyebrow">
+                    {{ dishName(recipe.dishId) }} · Version {{ recipe.versionNumber }}
+                </p>
+
+                <h2>
+                    {{ recipe.active ? 'Edit a new proposal' : 'Review proposed recipe' }}
+                </h2>
+            </div>
+
+            <span class="status-pill" [class.good]="recipe.active" [attr.data-tooltip]="
+              recipe.active
+                ? 'Currently used for orders and prep'
+                : 'Will not affect operations until approved'
+            ">
+                {{ recipe.active ? 'Active' : 'Needs approval' }}
+            </span>
+        </div>
+
+        <div class="recipe-audit" aria-label="Recipe version audit">
+            <span>Created by <strong>{{ recipe.createdBy }}</strong> on {{ recipe.createdAt | date:'medium' }}</span>
+            @if (recipe.approvedBy) {
+            <span>Approved by <strong>{{ recipe.approvedBy }}</strong> on {{ recipe.approvedAt | date:'medium' }}</span>
+            }
+            @if (recipe.effectiveAt) {
+            <span>Effective {{ recipe.effectiveAt | date:'medium' }}</span>
+            }
+            @if (recipe.supersededAt) {
+            <span>Superseded {{ recipe.supersededAt | date:'medium' }} by {{ recipe.supersededBy }}</span>
+            }
+        </div>
+
+        <div class="recipe-yield-panel">
+            <div>
+                <strong>Recipe yield</strong>
+                <small>All ingredient quantities below make this output.</small>
+            </div>
+            @if (recipe.active) {
+            <label>
+                <span class="sr-only">Yield quantity</span>
+                <input type="number" min="1" step="1" [ngModel]="recipe.yieldQuantity"
+                    (ngModelChange)="updateYield('quantity', $event)">
+            </label>
+            <label>
+                <span class="sr-only">Yield unit</span>
+                <input type="text" [ngModel]="recipe.yieldUnit"
+                    (ngModelChange)="updateYield('unit', $event)">
+            </label>
+            } @else {
+            <b>{{ recipe.yieldQuantity }} {{ recipe.yieldUnit }}</b>
+            }
+        </div>
+
+        <div class="recipe-detail-grid">
+            <section class="recipe-section">
+                <div class="recipe-section-heading">
+                    <div>
+                        <h3>Ingredients per recipe yield</h3>
+                        <p>
+                            {{ recipe.ingredients.length }}
+                            {{ recipe.ingredients.length === 1 ? 'ingredient' : 'ingredients' }}
+                        </p>
+                    </div>
+
+                    @if (recipe.active) {
+                    <button type="button" class="small-action" (click)="addIngredient()"
+                        data-tooltip="Add another ingredient to this proposal">
+                        Add ingredient
+                    </button>
+                    }
+                </div>
+
+                <div class="recipe-scroll-region">
+                    @for (
+                    ingredient of recipe.ingredients;
+                    track $index;
+                    let index = $index
+                    ) {
+                    @if (recipe.active) {
+                    <div class="ingredient-editor-row">
+                        <span class="row-number">{{ index + 1 }}</span>
+
+                        <label>
+                            <span class="sr-only">
+                                Ingredient {{ index + 1 }}
+                            </span>
+
+                            <select [ngModel]="ingredient.ingredientId" (ngModelChange)="
+                          updateIngredient(index, 'ingredientId', $event)
+                        ">
+                                @for (option of ingredients(); track option.id) {
+                                <option [value]="option.id">
+                                    {{ option.name }}
+                                </option>
+                                }
+                            </select>
+                        </label>
+
+                        <label>
+                            <span class="sr-only">Quantity</span>
+                            <input type="number" min="0.01" step="0.01" [ngModel]="ingredient.quantity" (ngModelChange)="
+                          updateIngredient(index, 'quantity', $event)
+                        ">
+                        </label>
+
+                        <label>
+                            <span class="sr-only">Unit</span>
+                            <input [ngModel]="ingredient.unit" (ngModelChange)="
+                          updateIngredient(index, 'unit', $event)
+                        ">
+                        </label>
+
+                        <button class="icon-button" type="button" (click)="removeIngredient(index)"
+                            [disabled]="recipe.ingredients.length <= 1" aria-label="Remove ingredient"
+                            data-tooltip="Remove this ingredient">x</button>
+                    </div>
+                    } @else {
+                    <div class="recipe-read-row">
+                        <span class="row-number">{{ index + 1 }}</span>
+                        <strong>{{ ingredientName(ingredient.ingredientId) }}</strong>
+                        <b>
+                            {{ ingredient.quantity }} {{ ingredient.unit }}
+                        </b>
+                    </div>
+                    }
+                    }
+                </div>
+            </section>
+
+            <section class="recipe-section">
+                <div class="recipe-section-heading">
+                    <div>
+                        <h3>Preparation steps</h3>
+                        <p>
+                            {{ recipe.instructions.length }}
+                            {{ recipe.instructions.length === 1 ? 'step' : 'steps' }}
+                        </p>
+                    </div>
+
+                    @if (recipe.active) {
+                    <button type="button" class="small-action" (click)="addInstruction()"
+                        data-tooltip="Add another preparation step">
+                        Add step
+                    </button>
+                    }
+                </div>
+
+                <div class="recipe-scroll-region step-list">
+                    @for (
+                    step of recipe.instructions;
+                    track $index;
+                    let index = $index
+                    ) {
+                    <div class="step-editor-row">
+                        <span class="step-number">{{ index + 1 }}</span>
+
+                        @if (recipe.active) {
+                        <label>
+                            <span class="sr-only">Step {{ index + 1 }}</span>
+                            <textarea rows="2" [ngModel]="step"
+                                (ngModelChange)="updateInstruction(index, $event)"></textarea>
+                        </label>
+
+                        <button class="icon-button" type="button" (click)="removeInstruction(index)"
+                            [disabled]="recipe.instructions.length <= 1" aria-label="Remove step"
+                            data-tooltip="Remove this preparation step">x</button>
+                        } @else {
+                        <p>{{ step }}</p>
+                        }
+                    </div>
+                    }
+                </div>
+            </section>
+        </div>
+
+        @if (recipe.active) {
+        <footer class="recipe-action-bar">
+            <label>
+                Why are you changing this recipe?
+                <input [ngModel]="reason()" (ngModelChange)="reason.set($event)"
+                    placeholder="For example: customer feedback or lower waste">
+            </label>
+
+            <button class="secondary-action" type="button" (click)="propose()" [disabled]="!reason().trim()"
+                data-tooltip="Save separately; the live recipe will not change">
+                Save for owner review
+            </button>
+        </footer>
+        } @else {
+        <footer class="recipe-action-bar approval-bar">
+            <p class="approval-note">
+                <strong>Owner decision required.</strong>
+                This version cannot change live orders or stock calculations until
+                it is activated.
+            </p>
+
+            <button class="action-button" type="button" (click)="activate()"
+                data-tooltip="Replace the active version after your explicit approval">
+                Approve &amp; activate version
+            </button>
+        </footer>
+        }
+    </section>
+    }
+
+    <section class="screen-card section-spaced prep-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Today's plan</p>
+                <h2>Prep calculated from queued orders</h2>
+            </div>
+
+            <span class="count-badge" data-tooltip="Dishes currently requiring preparation">
+                {{ prep().length }}
+            </span>
+        </div>
+
+        <div class="prep-grid">
+            @for (item of prep(); track item.dish) {
+            <article class="prep-item">
+                <strong>{{ item.quantity }} x {{ item.dish }}</strong>
+                <small>{{ item.ingredients }}</small>
+            </article>
+            }
+        </div>
+    </section>
+    }
+</main>

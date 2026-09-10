@@ -1,0 +1,124 @@
+<main class="screen">
+    <header class="page-heading">
+        <div>
+            <p class="eyebrow">Administration</p>
+            <h1>Workspace settings</h1>
+            <p class="screen-intro">
+                Business preferences and service connections are kept here, away from daily kitchen work.
+            </p>
+        </div>
+    </header>
+
+    <section class="settings-grid">
+        <article class="screen-card">
+            <p class="eyebrow">Business</p>
+            <h2>Kitchen profile</h2>
+
+            <dl class="settings-list">
+                <div>
+                    <dt>Workspace</dt>
+                    <dd>{{ workspace()?.kitchenName || 'Loading workspace' }}</dd>
+                </div>
+
+                <div>
+                    <dt>Location</dt>
+                    <dd>{{ workspace()?.locationName || 'Loading location' }}</dd>
+                </div>
+
+                <div>
+                    <dt>Timezone</dt>
+                    <dd>{{ workspace()?.timeZone || 'Loading timezone' }}</dd>
+                </div>
+
+                <div>
+                    <dt>Currency</dt>
+                    <dd>{{ workspace()?.currency || 'Loading currency' }}</dd>
+                </div>
+            </dl>
+        </article>
+
+        <article class="screen-card">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">System</p>
+                    <h2>Connections</h2>
+                </div>
+
+                @if (status(); as current) {
+                <span class="status-pill" [class.good]="current.environment === 'cloud'">
+                    {{ current.environment }} mode
+                </span>
+                }
+            </div>
+
+            @if (status(); as current) {
+            <div class="connection-list">
+                @for (item of current.connections; track item.name) {
+                <div>
+                    <span class="connection-dot" [class.connected]="item.connected"></span>
+
+                    <span>
+                        <strong>{{ item.name }}</strong>
+                        <small>{{ item.provider }} · {{ item.detail }}</small>
+                    </span>
+                </div>
+                }
+            </div>
+            } @else {
+            <p class="form-message">
+                {{ error() || 'Checking connections.' }}
+            </p>
+            }
+        </article>
+    </section>
+
+    <section class="screen-card section-spaced">
+        <p class="eyebrow">Safeguards</p>
+        <h2>Automation policy</h2>
+
+        <div class="responsibility-grid">
+            <article>
+                <strong>Routine updates</strong>
+                <p>Natural-language stock updates are saved only after explicit confirmation.</p>
+                <span>Never auto-applied</span>
+            </article>
+
+            <article>
+                <strong>Uncertain updates</strong>
+                <p>Ambiguous or expired proposals must be reviewed or parsed again.</p>
+                <span>Review required</span>
+            </article>
+
+            <article>
+                <strong>Recipe changes</strong>
+                <p>A recipe never changes without explicit owner or admin approval.</p>
+                <span>Always protected</span>
+            </article>
+        </div>
+    </section>
+
+    <section class="screen-card section-spaced">
+        <p class="eyebrow">Data responsibilities</p>
+        <h2>Where information belongs</h2>
+
+        <div class="responsibility-grid">
+            <article>
+                <strong>Daily operations</strong>
+                <p>Orders, inventory, recipes, users and approvals.</p>
+                <span>Cloud SQL</span>
+            </article>
+
+            <article>
+                <strong>Uploaded evidence</strong>
+                <p>Receipt images, imports and exports.</p>
+                <span>Cloud Storage</span>
+            </article>
+
+            <article>
+                <strong>Trends and reporting</strong>
+                <p>Historical performance and AI analysis.</p>
+                <span>BigQuery</span>
+            </article>
+        </div>
+    </section>
+</main>

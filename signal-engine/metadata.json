@@ -1,0 +1,19 @@
+{
+  "name": "BizLaMa governed signal engine",
+  "description": "Validates versioned kitchen events and emits immutable facts, bounded features, errors, and governed proposal commands.",
+  "streaming": true,
+  "supportsAtLeastOnce": false,
+  "supportsExactlyOnce": true,
+  "parameters": [
+    {"name":"inputSubscription","label":"Input Pub/Sub subscription","helpText":"Dedicated projects/.../subscriptions/... source.","regexes":["^projects/[^/]+/subscriptions/[^/]+$"]},
+    {"name":"rawTable","label":"Raw BigQuery table","helpText":"project:dataset.table","regexes":["^[^:]+:[^.]+\\.[^.]+$"]},
+    {"name":"factTable","label":"Fact BigQuery table","helpText":"project:dataset.table","regexes":["^[^:]+:[^.]+\\.[^.]+$"]},
+    {"name":"featureTable","label":"Feature BigQuery table","helpText":"project:dataset.table","regexes":["^[^:]+:[^.]+\\.[^.]+$"]},
+    {"name":"errorTable","label":"Error BigQuery table","helpText":"project:dataset.table","regexes":["^[^:]+:[^.]+\\.[^.]+$"]},
+    {"name":"proposalTopic","label":"Governed proposal Pub/Sub topic","helpText":"projects/.../topics/...","regexes":["^projects/[^/]+/topics/[^/]+$"]},
+    {"name":"timestampAttribute","label":"Occurred-at attribute","helpText":"Canonical producer attribute; must be occurredAt.","isOptional":true,"regexes":["^occurredAt$"]},
+    {"name":"idAttribute","label":"Event-ID attribute","helpText":"Canonical producer attribute; must be eventId.","isOptional":true,"regexes":["^eventId$"]},
+    {"name":"allowedLatenessMinutes","label":"Allowed lateness minutes","helpText":"Positive event-time lateness limit; default 120.","isOptional":true,"regexes":["^[1-9][0-9]*$"]},
+    {"name":"deduplicationHorizonHours","label":"Deduplication horizon hours","helpText":"Positive best-effort state TTL; default 24.","isOptional":true,"regexes":["^[1-9][0-9]*$"]}
+  ]
+}
