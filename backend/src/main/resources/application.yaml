@@ -1,0 +1,166 @@
+spring:
+  application:
+    name: bizlama-api
+
+  datasource:
+    url: ${BIZLAMA_DB_URL:jdbc:postgresql://localhost:5432/bizlama}
+    username: ${BIZLAMA_DB_USER:bizlama}
+    password: ${BIZLAMA_DB_PASSWORD:bizlama-local}
+    driver-class-name: org.postgresql.Driver
+
+    hikari:
+      maximum-pool-size: ${BIZLAMA_DB_POOL_SIZE:5}
+      minimum-idle: 0
+
+  flyway:
+    enabled: true
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+
+bizlama:
+  auth:
+    mode: ${BIZLAMA_AUTH_MODE:local}
+    owner-email: ${BIZLAMA_OWNER_EMAIL:owner@bizlama.local}
+    owner-name: ${BIZLAMA_OWNER_NAME:Madhu}
+    owner-password: ${BIZLAMA_OWNER_PASSWORD:bizlama-demo}
+    token-secret: ${BIZLAMA_AUTH_TOKEN_SECRET:dev-only-bizlama-token-secret-change-before-cloud}
+    token-hours: ${BIZLAMA_AUTH_TOKEN_HOURS:8}
+    project-id: ${BIZLAMA_GCP_PROJECT_ID:bizlama}
+    identity-api-key: ${BIZLAMA_IDENTITY_API_KEY:}
+
+  workspace:
+    kitchen-id: ${BIZLAMA_KITCHEN_ID:kitchen-default}
+    location-id: ${BIZLAMA_LOCATION_ID:location-main}
+    time-zone: ${BIZLAMA_TIME_ZONE:Asia/Kolkata}
+
+  automation:
+    auto-apply-threshold: ${BIZLAMA_AUTO_APPLY_THRESHOLD:0.90}
+
+  shelf-life:
+    mode: ${BIZLAMA_SHELF_LIFE_MODE:database}
+
+  receipts:
+    storage-mode: ${BIZLAMA_RECEIPT_STORAGE:local}
+    local-directory: ${BIZLAMA_RECEIPT_DIRECTORY:./.data/receipts}
+    bucket: ${BIZLAMA_RECEIPTS_BUCKET:}
+    readiness-object: ${BIZLAMA_RECEIPTS_READINESS_OBJECT:.well-known/bizlama-receipt-readiness}
+    ai-enabled: ${BIZLAMA_VERTEX_AI_ENABLED:false}
+    model: ${BIZLAMA_VERTEX_MODEL:gemini-2.5-flash}
+    max-size-bytes: ${BIZLAMA_RECEIPT_MAX_BYTES:10485760}
+
+  outbox:
+    dispatch-enabled: ${BIZLAMA_OUTBOX_DISPATCH_ENABLED:false}
+    publisher: ${BIZLAMA_OUTBOX_PUBLISHER:local}
+    batch-size: ${BIZLAMA_OUTBOX_BATCH_SIZE:50}
+    max-attempts: ${BIZLAMA_OUTBOX_MAX_ATTEMPTS:8}
+    base-backoff: ${BIZLAMA_OUTBOX_BASE_BACKOFF:PT5S}
+    max-backoff: ${BIZLAMA_OUTBOX_MAX_BACKOFF:PT15M}
+    lease-duration: ${BIZLAMA_OUTBOX_LEASE_DURATION:PT1M}
+    poll-interval: ${BIZLAMA_OUTBOX_POLL_INTERVAL:PT5S}
+    worker-id: ${BIZLAMA_OUTBOX_WORKER_ID:}
+    pubsub:
+      project-id: ${BIZLAMA_GCP_PROJECT_ID:}
+      topic-id: ${BIZLAMA_OUTBOX_TOPIC_ID:}
+      publish-timeout: ${BIZLAMA_OUTBOX_PUBLISH_TIMEOUT:PT10S}
+      shutdown-timeout: ${BIZLAMA_OUTBOX_SHUTDOWN_TIMEOUT:PT5S}
+
+  explanations:
+    prompt-version: ${BIZLAMA_EXPLANATION_PROMPT_VERSION:demand-explanation-v1}
+    max-input-chars: ${BIZLAMA_EXPLANATION_MAX_INPUT_CHARS:12000}
+    vertex:
+      enabled: ${BIZLAMA_EXPLANATIONS_VERTEX_ENABLED:false}
+      project-id: ${BIZLAMA_GCP_PROJECT_ID:}
+      location: ${BIZLAMA_VERTEX_LOCATION:global}
+      model: ${BIZLAMA_EXPLANATION_MODEL:gemini-2.5-flash}
+      timeout: ${BIZLAMA_EXPLANATION_TIMEOUT:PT8S}
+      queue-timeout: ${BIZLAMA_EXPLANATION_QUEUE_TIMEOUT:PT0.25S}
+      max-concurrent: ${BIZLAMA_EXPLANATION_MAX_CONCURRENT:2}
+      max-attempts: ${BIZLAMA_EXPLANATION_MAX_ATTEMPTS:2}
+      max-output-tokens: ${BIZLAMA_EXPLANATION_MAX_OUTPUT_TOKENS:512}
+
+  signals:
+    proposals:
+      enabled: ${BIZLAMA_SIGNAL_PROPOSALS_ENABLED:false}
+      project-id: ${BIZLAMA_SIGNAL_PROPOSALS_PROJECT_ID:}
+      subscription-id: ${BIZLAMA_SIGNAL_PROPOSALS_SUBSCRIPTION_ID:}
+      expected-target-queue: ${BIZLAMA_SIGNAL_PROPOSALS_TARGET_QUEUE:}
+      max-message-bytes: ${BIZLAMA_SIGNAL_PROPOSALS_MAX_BYTES:65536}
+
+  analytics:
+    raw:
+      enabled: ${BIZLAMA_ANALYTICS_RAW_ENABLED:false}
+      project-id: ${BIZLAMA_ANALYTICS_RAW_PROJECT_ID:}
+      subscription-id: ${BIZLAMA_ANALYTICS_RAW_SUBSCRIPTION_ID:}
+      dataset: ${BIZLAMA_ANALYTICS_RAW_DATASET:}
+      table: ${BIZLAMA_ANALYTICS_RAW_TABLE:operational_events_raw}
+
+  observability:
+    outbox:
+      warning-age: ${BIZLAMA_OUTBOX_WARNING_AGE:PT5M}
+      sample-interval: ${BIZLAMA_OUTBOX_SAMPLE_INTERVAL:PT1M}
+
+
+server:
+  port: ${PORT:8080}
+
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+        add-additional-paths: true
+      show-details: never
+      group:
+        readiness:
+          include: readinessState,db,outbox,receiptStorage,rawAnalytics,signalProposals
+        liveness:
+          include: livenessState
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+
+---
+spring:
+  config:
+    activate:
+      on-profile: memory
+
+  datasource:
+    url: jdbc:h2:mem:bizlama;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+
+
+---
+spring:
+  config:
+    activate:
+      on-profile: cloud
+
+  datasource:
+    url: jdbc:postgresql:///${BIZLAMA_DB_NAME:bizlama}?cloudSqlInstance=${BIZLAMA_CLOUD_SQL_INSTANCE}&socketFactory=com.google.cloud.sql.postgres.SocketFactory&cloudSqlRefreshStrategy=lazy
+    username: ${BIZLAMA_DB_USER:bizlama_app}
+    password: ${BIZLAMA_DB_PASSWORD}
+
+bizlama:
+  workspace:
+    kitchen-id: ${BIZLAMA_KITCHEN_ID}
+    location-id: ${BIZLAMA_LOCATION_ID}
+    time-zone: ${BIZLAMA_TIME_ZONE}
+
+logging:
+  structured:
+    format:
+      console: ecs
+    ecs:
+      service:
+        name: bizlama-api
+        environment: ${BIZLAMA_ENVIRONMENT}

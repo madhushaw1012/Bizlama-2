@@ -1,0 +1,192 @@
+<main class="screen">
+    <header class="page-heading">
+        <div>
+            <p class="eyebrow">Inventory</p>
+            <h1>Stockroom</h1>
+            <p class="screen-intro">
+                Find stock quickly, spot expiry risks, and record incoming purchases.
+            </p>
+        </div>
+
+        <button class="primary-action" type="button" (click)="mode() === 'browse' ? showAdd() : showBrowse()">
+            {{ mode() === 'browse' ? 'Add purchase' : 'Back to inventory' }}
+        </button>
+    </header>
+
+    @if (summary(); as totals) {
+    <section class="page-stats inventory-stats" aria-label="Inventory summary">
+        <article>
+            <span>Ingredients in stock</span>
+            <strong>{{ totals.ingredients | number }}</strong>
+        </article>
+
+        <article>
+            <span>Active lots</span>
+            <strong>{{ totals.activeLots | number }}</strong>
+        </article>
+
+        <article class="warning">
+            <span>Expiring in 7 days</span>
+            <strong>{{ totals.expiringLots | number }}</strong>
+        </article>
+
+        <article [class.warning]="totals.expiredLots > 0">
+            <span>Expired lots</span>
+            <strong>{{ totals.expiredLots | number }}</strong>
+        </article>
+    </section>
+    }
+
+    @if (message()) {
+    <p class="inline-notice">{{ message() }}</p>
+    }
+
+    @if (mode() === 'add') {
+    <section class="screen-card focused-form">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Incoming stock</p>
+                <h2>Add a purchase</h2>
+            </div>
+        </div>
+
+        <div class="form-grid three-columns">
+            <label>
+                Ingredient
+                <input list="known-ingredients" [ngModel]="ingredient()" (ngModelChange)="ingredientChanged($event)"
+                    placeholder="Search or add an ingredient">
+
+                <datalist id="known-ingredients">
+                    @for (item of ingredients(); track item.id) {
+                    <option [value]="item.name"></option>
+                    }
+                </datalist>
+            </label>
+
+            <label>
+                Quantity
+                <input type="number" min="0.1" step="0.1" [ngModel]="quantity()" (ngModelChange)="quantity.set($event)">
+            </label>
+
+            <label>
+                Unit
+                <select [ngModel]="unit()" (ngModelChange)="unit.set($event)">
+                    <option value="g">grams (g)</option>
+                    <option value="ml">millilitres (ml)</option>
+                    <option value="each">count (each)</option>
+                </select>
+            </label>
+
+            <label>
+                Expiry date
+                <span class="optional">Optional</span>
+                <input type="date" [ngModel]="expiry()" (ngModelChange)="expiry.set($event)">
+            </label>
+        </div>
+
+        <div class="form-actions">
+            <button class="secondary-action" type="button" (click)="showBrowse()">
+                Cancel
+            </button>
+
+            <button class="action-button" type="button" (click)="save()">
+                Add to inventory
+            </button>
+        </div>
+    </section>
+    } @else {
+    <section class="screen-card data-workspace">
+        <div class="data-toolbar">
+            <label class="search-field">
+                <span class="sr-only">Search inventory</span>
+                <input type="search" [ngModel]="searchText()" (ngModelChange)="searchChanged($event)"
+                    placeholder="Search ingredient or lot ID">
+            </label>
+
+            <label class="compact-filter">
+                <span>Status</span>
+                <select [ngModel]="status()" (ngModelChange)="changeStatus($event)">
+                    <option value="all">All stock</option>
+                    <option value="available">Available</option>
+                    <option value="expiring">Expiring soon</option>
+                    <option value="quarantined">Expiry review</option>
+                    <option value="expired">Expired</option>
+                </select>
+            </label>
+        </div>
+
+        @if (inventory(); as data) {
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Ingredient</th>
+                        <th>Quantity</th>
+                        <th>Purchased</th>
+                        <th>Expiry</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    @for (lot of data.items; track lot.id) {
+                    <tr>
+                        <td>
+                            <strong>{{ lot.ingredientName }}</strong>
+                            <small>{{ lot.id }}</small>
+                        </td>
+                        <td>
+                            {{ lot.quantityRemaining | number: '1.0-2' }}
+                            {{ lot.unit }}
+                        </td>
+                        <td>{{ lot.purchasedAt | date: 'mediumDate' }}</td>
+                        <td>
+                            {{ lot.expiresAt
+                                ? (lot.expiresAt | date: 'mediumDate')
+                                : 'Unresolved — quarantined' }}
+                        </td>
+                        <td>
+                            <span class="status-pill" [class.good]="lot.status === 'available'"
+                                [class.critical-pill]="lot.status === 'expired'">
+                                {{ statusLabel(lot.status) }}
+                            </span>
+                        </td>
+                    </tr>
+                    } @empty {
+                    <tr>
+                        <td colspan="5">
+                            <div class="empty-state">
+                                <strong>No matching stock</strong>
+                                <span>Try another search or filter.</span>
+                            </div>
+                        </td>
+                    </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <footer class="pagination-bar">
+            <span>{{ data.totalItems | number }} matching lots</span>
+
+            <div>
+                <button class="secondary-action" type="button" (click)="previousPage()" [disabled]="data.page === 0">
+                    Previous
+                </button>
+
+                <span>
+                    Page {{ data.totalPages ? data.page + 1 : 0 }} of {{ data.totalPages }}
+                </span>
+
+                <button class="secondary-action" type="button" (click)="nextPage()"
+                    [disabled]="data.page + 1 >= data.totalPages">
+                    Next
+                </button>
+            </div>
+        </footer>
+        } @else if (loading()) {
+        <div class="loading-state">Loading inventory.</div>
+        }
+    </section>
+    }
+</main>

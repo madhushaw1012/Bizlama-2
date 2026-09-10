@@ -1,0 +1,124 @@
+@if (auth.authenticated()) {
+<div class="app-shell" [class.sidebar-collapsed]="sidebarCollapsed()">
+    @if (mobileNavigationOpen()) {
+    <button class="navigation-scrim" type="button" aria-label="Close navigation" (click)="closeMobileNavigation()">
+    </button>
+    }
+
+    <aside class="sidebar" [class.mobile-open]="mobileNavigationOpen()">
+        <div class="sidebar-header">
+            <a class="sidebar-brand" routerLink="/dashboard" (click)="closeMobileNavigation()"
+                data-tooltip="Open kitchen overview">
+                <img class="brand-mark" src="/lama.jpeg" alt="BizLaMa logo">
+                <span class="brand-copy">
+                    <small>KITCHEN OPERATIONS</small>
+                    <strong>BizLaMa</strong>
+                </span>
+            </a>
+
+            <button class="sidebar-toggle" type="button" (click)="toggleSidebar()"
+                [attr.aria-label]="sidebarCollapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
+                [attr.data-tooltip]="sidebarCollapsed() ? 'Expand navigation' : 'Collapse navigation'">
+                <span aria-hidden="true">{{ sidebarCollapsed() ? '›' : '‹' }}</span>
+            </button>
+        </div>
+
+        <nav aria-label="Main navigation">
+            <span class="nav-section-label">Workspace</span>
+
+            <a routerLink="/dashboard" routerLinkActive="active" (click)="closeMobileNavigation()"
+                data-tooltip="Priorities and kitchen health">
+                <span class="nav-icon" aria-hidden="true">⌂</span>
+                <span class="nav-label">Overview</span>
+            </a>
+
+            <a routerLink="/activity" routerLinkActive="active" (click)="closeMobileNavigation()"
+                data-tooltip="Record purchases, production or waste">
+                <span class="nav-icon" aria-hidden="true">+</span>
+                <span class="nav-label">Record activity</span>
+            </a>
+
+            <a routerLink="/receipts" routerLinkActive="active" (click)="closeMobileNavigation()"
+                data-tooltip="Upload and review grocery receipts">
+                <span class="nav-icon" aria-hidden="true">▱</span>
+                <span class="nav-label">Receipt inbox</span>
+            </a>
+
+            <a routerLink="/orders" routerLinkActive="active" (click)="closeMobileNavigation()"
+                data-tooltip="Manage customer orders">
+                <span class="nav-icon" aria-hidden="true">⊟</span>
+                <span class="nav-label">Orders</span>
+            </a>
+
+            <a routerLink="/inventory" routerLinkActive="active" (click)="closeMobileNavigation()"
+                data-tooltip="Track stock, expiry and restocking">
+                <span class="nav-icon" aria-hidden="true">□</span>
+                <span class="nav-label">Inventory</span>
+            </a>
+
+            <a routerLink="/recipes" routerLinkActive="active" (click)="closeMobileNavigation()"
+                data-tooltip="Manage recipes, versions and prep">
+                <span class="nav-icon" aria-hidden="true">≡</span>
+                <span class="nav-label">Recipes &amp; prep</span>
+            </a>
+
+            <a routerLink="/feedback" routerLinkActive="active" (click)="closeMobileNavigation()"
+                data-tooltip="Review feedback and experiments">
+                <span class="nav-icon" aria-hidden="true">◇</span>
+                <span class="nav-label">Feedback</span>
+            </a>
+
+            <span class="nav-section-label nav-section-spaced">Administration</span>
+
+            <a routerLink="/settings" routerLinkActive="active" (click)="closeMobileNavigation()"
+                data-tooltip="Workspace settings and connections">
+                <span class="nav-icon" aria-hidden="true"></span>
+                <span class="nav-label">Settings</span>
+            </a>
+        </nav>
+
+        <div class="workspace-status">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span class="workspace-copy">
+                <strong>{{ workspaceLabel() }}</strong>
+                <small>Ready</small>
+            </span>
+        </div>
+    </aside>
+
+    <div class="page-shell">
+        <header class="app-topbar">
+            <button class="mobile-menu-button" type="button" aria-label="Open navigation" data-tooltip="Open navigation"
+                (click)="toggleMobileNavigation()">
+                =
+            </button>
+
+            <img class="topbar-logo" src="/lama.jpeg" alt="BizLaMa logo">
+            <span class="topbar-context">Kitchen workspace</span>
+
+            <div class="account-controls">
+                <span class="topbar-state" data-tooltip="Your workspace is available">
+                    <span></span>
+                    Online
+                </span>
+
+                <span class="account-name">
+                    <b>{{ auth.user()?.name }}</b>
+                    <small>{{ auth.user()?.role }}</small>
+                </span>
+
+                <button type="button" class="avatar-button" (click)="logout()" aria-label="Sign out"
+                    data-tooltip="Sign out of BizLaMa">
+                    {{ (auth.user()?.name || '0').charAt(0).toUpperCase() }}
+                </button>
+            </div>
+        </header>
+
+        <section class="page-content">
+            <router-outlet />
+        </section>
+    </div>
+</div>
+} @else {
+<router-outlet />
+}

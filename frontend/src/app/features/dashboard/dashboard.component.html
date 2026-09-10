@@ -1,0 +1,523 @@
+<main class="screen dashboard-screen">
+    @if (error(); as message) {
+    <section class="message error-message">
+        <strong>Kitchen data unavailable</strong>
+        <p>{{ message }}</p>
+    </section>
+    }
+
+    @if (!online()) {
+    <section class="cockpit-notice warning" role="status">
+        <strong>Offline</strong>
+        <span>Saved evidence stays visible, but decisions are disabled until you reconnect.</span>
+    </section>
+    }
+
+    @if (dashboard(); as data) {
+    <header class="dashboard-header">
+        <div>
+            <p class="eyebrow">{{ today }}</p>
+            <h1>{{ greeting }}, {{ displayName }}.</h1>
+            <p>Here are the few things that need your attention today.</p>
+        </div>
+
+        <a class="primary-action link-action" routerLink="/activity">
+            Record an update
+        </a>
+    </header>
+
+    <section class="overview-metrics" aria-label="Kitchen summary">
+        @for (metric of data.metrics; track metric.label) {
+        <a class="overview-metric" [class.warning]="metric.status === 'warning'"
+            [routerLink]="metricRoute(metric.label)">
+            <span>{{ metric.label }}</span>
+            <strong>{{ metric.value }}</strong>
+            <small>{{ metric.detail }}</small>
+            <em>View details →</em>
+        </a>
+        }
+    </section>
+
+    <section class="recommendation-cockpit" aria-labelledby="recommendation-title">
+        <div class="recommendation-heading">
+            <div>
+                <p class="eyebrow">Demand cockpit</p>
+                <h2 id="recommendation-title">Next best action</h2>
+                <p>Calculated from queued orders, their exact recipe versions, and usable FEFO stock.</p>
+            </div>
+            <button class="secondary-action" type="button"
+                [disabled]="generating() || syncing() || !online() || !workspace()"
+                (click)="generateRecommendations()">
+                {{ generating() ? 'Calculating…' : 'Recalculate priorities' }}
+            </button>
+        </div>
+
+        @if (recommendationError(); as message) {
+        <div class="cockpit-notice error" role="alert">
+            <strong>Recommendation not changed</strong>
+            <span>{{ message }}</span>
+        </div>
+        }
+
+        @if (attentionRecommendations().length > 1) {
+        <nav class="recommendation-selector" aria-label="Attention items">
+            @for (option of attentionRecommendations(); track option.id; let index = $index) {
+            <button type="button" [class.active]="currentRecommendation().id === option.id"
+                (click)="selectRecommendation(option)">
+                {{ index + 1 }} · {{ option.type === 'PREPARE' ? 'Prepare' : option.unit }}
+            </button>
+            }
+        </nav>
+        }
+
+        @if (currentRecommendation(); as item) {
+        <article class="recommendation-card" [class.high-risk]="item.riskTier === 'HIGH'">
+            <div class="recommendation-status-row">
+                <span class="risk-badge" [class.high]="item.riskTier === 'HIGH'">
+                    {{ item.riskTier === 'HIGH' ? 'Owner approval required' : 'Review before action' }}
+                </span>
+                <span class="sync-state" aria-live="polite">
+                    {{ syncing() ? 'Saving decision…' : item.status }}
+                </span>
+            </div>
+
+            <div class="recommendation-action">
+                <div>
+                    <h3>{{ actionTitle(item) }}</h3>
+                    <p>{{ plainReason(item) }}</p>
+                </div>
+                <div class="recommendation-quantity">
+                    <strong>{{ format(item.proposedQuantity) }}</strong>
+                    <span>{{ item.unit }}</span>
+                </div>
+            </div>
+
+            <section class="recommendation-explanation" aria-live="polite">
+                <div class="explanation-heading">
+                    <strong>Why this is recommended</strong>
+                    @if (explanation(); as value) {
+                    <span>
+                        {{ value.outcome === 'FALLBACK' || value.provider === 'deterministic'
+                            ? 'Rules-based explanation'
+                            : value.cached ? 'Saved explanation' : 'Current explanation' }}
+                    </span>
+                    }
+                </div>
+                @if (explanation(); as value) {
+                <p>{{ value.content.summary }}</p>
+                @if (value.content.drivers.length) {
+                <ul aria-label="Recommendation drivers">
+                    @for (driver of value.content.drivers; track driver) {
+                    <li>{{ driver }}</li>
+                    }
+                </ul>
+                }
+                @if (value.content.caveats.length) {
+                <div class="explanation-caveats">
+                    <strong>Check before acting</strong>
+                    <ul>
+                        @for (caveat of value.content.caveats; track caveat) {
+                        <li>{{ caveat }}</li>
+                        }
+                    </ul>
+                </div>
+                }
+                <small>Explanation for version {{ value.recommendationVersion }}. The governed quantity remains {{ format(value.authoritativeQuantity) }} {{ value.authoritativeUnit }}.</small>
+                } @else if (explanationLoading()) {
+                <p>Loading the saved explanation for this recommendation…</p>
+                } @else if (explanationError(); as message) {
+                <p class="explanation-unavailable">{{ message }}</p>
+                }
+            </section>
+
+            <div class="calculation-summary">
+                <strong>Evidence used for the calculation</strong>
+                <p>{{ calculationLine(item) }}</p>
+                <small>{{ evidenceSummary(item) }}</small>
+            </div>
+
+            @if (item.status === 'PENDING') {
+            <div class="recommendation-edit">
+                <label>
+                    Adjust quantity
+                    <input type="number" min="0.001" step="0.001"
+                        [ngModel]="editQuantity()"
+                        (ngModelChange)="editQuantity.set($event)"
+                        [disabled]="syncing() || !online()">
+                </label>
+                <button class="secondary-action" type="button"
+                    [disabled]="syncing() || !online()"
+                    (click)="saveEditedQuantity(item)">
+                    Save adjustment
+                </button>
+            </div>
+
+            <div class="recommendation-actions">
+                @if (canApprove()) {
+                <button class="primary-action" type="button"
+                    [disabled]="syncing() || !online()"
+                    (click)="approve(item)">
+                    Approve action
+                </button>
+                }
+                @if (item.ingredientId) {
+                <button class="secondary-action" type="button"
+                    [disabled]="syncing() || !online()"
+                    (click)="flagInventory(item)">
+                    Stock count looks wrong
+                </button>
+                }
+                <button class="text-action" type="button"
+                    [disabled]="syncing() || !online()"
+                    (click)="dismiss(item)">
+                    Dismiss
+                </button>
+            </div>
+            } @else if (item.status === 'APPROVED') {
+            <div class="recommendation-actions">
+                @if (canApprove()) {
+                <button class="primary-action" type="button"
+                    [disabled]="syncing() || !online()"
+                    (click)="apply(item)">
+                    Complete action and update stock
+                </button>
+                <button class="text-action" type="button"
+                    [disabled]="syncing() || !online()"
+                    [attr.aria-expanded]="showingReverseForm()"
+                    (click)="beginReverse()">
+                    Reverse recommendation
+                </button>
+                }
+            </div>
+            } @else if (item.status === 'INVENTORY_FLAGGED') {
+            <div class="recommendation-actions">
+                <a class="primary-action link-action" routerLink="/inventory">
+                    Correct inventory
+                </a>
+                <button class="secondary-action" type="button"
+                    [disabled]="syncing() || !online()"
+                    [attr.aria-expanded]="showingOutcomeForm()"
+                    (click)="beginOutcome(item)">
+                    Record corrected count
+                </button>
+            </div>
+            } @else if (item.status === 'APPLIED') {
+            <div class="recommendation-actions">
+                <button class="primary-action" type="button"
+                    [disabled]="syncing() || !online()"
+                    [attr.aria-expanded]="showingOutcomeForm()"
+                    (click)="beginOutcome(item)">
+                    Record measured outcome
+                </button>
+                @if (canApprove()) {
+                <button class="text-action" type="button"
+                    [disabled]="syncing() || !online()"
+                    [attr.aria-expanded]="showingReverseForm()"
+                    (click)="beginReverse()">
+                    Reverse recommendation
+                </button>
+                }
+            </div>
+            }
+
+            @if (showingOutcomeForm()) {
+            <form class="operator-evidence-form" novalidate
+                (ngSubmit)="submitOutcome(item)">
+                <div class="operator-form-heading">
+                    <div>
+                        <strong>Record what actually happened</strong>
+                        <p>Use a measured value and an existing kitchen record. Outcome, measurement, and time are never copied from the proposal.</p>
+                    </div>
+                    <button class="text-action" type="button"
+                        [disabled]="syncing()"
+                        (click)="cancelOutcome()">
+                        Cancel
+                    </button>
+                </div>
+
+                <div class="operator-form-grid">
+                    <label class="form-field-wide">
+                        Outcome type
+                        <select name="outcomeType" required
+                            [ngModel]="outcomeType()"
+                            (ngModelChange)="selectOutcomeType($event)"
+                            [disabled]="syncing()">
+                            <option value="">Select what happened</option>
+                            @for (option of compatibleOutcomeOptions(item); track option.value) {
+                            <option [value]="option.value">{{ option.label }}</option>
+                            }
+                        </select>
+                    </label>
+
+                    @if (outcomeNeedsQuantity()) {
+                    <label>
+                        Actual measured quantity
+                        <input name="outcomeQuantity" type="number"
+                            min="0.000001" step="any" required
+                            [ngModel]="outcomeQuantity()"
+                            (ngModelChange)="outcomeQuantity.set($event)"
+                            [disabled]="syncing()">
+                    </label>
+                    <label>
+                        Measurement unit
+                        <input name="outcomeUnit" type="text" required
+                            placeholder="e.g. kg, g, each"
+                            [ngModel]="outcomeUnit()"
+                            (ngModelChange)="outcomeUnit.set($event)"
+                            [disabled]="syncing()">
+                        <small>Must be convertible to {{ item.unit }}.</small>
+                    </label>
+                    }
+
+                    <label>
+                        Observed at
+                        <input name="outcomeOccurredAt" type="datetime-local"
+                            step="60" required
+                            [ngModel]="outcomeOccurredAt()"
+                            (ngModelChange)="outcomeOccurredAt.set($event)"
+                            [disabled]="syncing()">
+                        <small>Enter the actual local date and time; it is not filled automatically.</small>
+                    </label>
+                    <label>
+                        Evidence source type
+                        <select name="outcomeSourceReferenceType" required
+                            [ngModel]="outcomeSourceReferenceType()"
+                            (ngModelChange)="selectOutcomeSourceType($event)"
+                            [disabled]="syncing()">
+                            <option value="">Select an existing record type</option>
+                            @for (type of outcomeSourceTypes(item); track type) {
+                            <option [value]="type">{{ type }}</option>
+                            }
+                        </select>
+                        @if (item.status === 'APPLIED' && item.appliedActionId) {
+                        <small>The governed action is preselected; change it only when another listed record is the evidence.</small>
+                        } @else if (item.status === 'INVENTORY_FLAGGED') {
+                        <small>Use a correction or manual-adjustment movement from this inventory location.</small>
+                        }
+                    </label>
+                    <label>
+                        Evidence reference ID
+                        <input name="outcomeSourceReferenceId" type="text" required
+                            placeholder="Existing action, order, receipt, or movement ID"
+                            [ngModel]="outcomeSourceReferenceId()"
+                            (ngModelChange)="outcomeSourceReferenceId.set($event)"
+                            [disabled]="syncing()">
+                    </label>
+                    <label class="form-field-wide">
+                        Observation notes
+                        <textarea name="outcomeNotes" rows="3" required
+                            placeholder="Describe how the result was measured and any exception."
+                            [ngModel]="outcomeNotes()"
+                            (ngModelChange)="outcomeNotes.set($event)"
+                            [disabled]="syncing()"></textarea>
+                    </label>
+                </div>
+
+                <div class="operator-form-actions">
+                    <button class="primary-action" type="submit"
+                        [disabled]="syncing() || !online()">
+                        {{ syncing() ? 'Recording…' : 'Record measured outcome' }}
+                    </button>
+                    <small>This records evidence against recommendation version {{ item.version }}.</small>
+                </div>
+            </form>
+            }
+
+            @if (showingReverseForm()) {
+            <form class="operator-evidence-form reversal-form" novalidate
+                (ngSubmit)="submitReverse(item)">
+                <div class="operator-form-heading">
+                    <div>
+                        <strong>Reverse this recommendation</strong>
+                        @if (item.status === 'APPLIED') {
+                        <p>This changes the recommendation record only; it does not undo work already performed.</p>
+                        } @else {
+                        <p>The approved action will no longer be current.</p>
+                        }
+                    </div>
+                    <button class="text-action" type="button"
+                        [disabled]="syncing()"
+                        (click)="cancelReverse()">
+                        Cancel
+                    </button>
+                </div>
+                <label>
+                    Reason for reversal
+                    <textarea name="reverseReason" rows="3" required
+                        placeholder="Explain the new evidence or operational change."
+                        [ngModel]="reverseReason()"
+                        (ngModelChange)="reverseReason.set($event)"
+                        [disabled]="syncing()"></textarea>
+                </label>
+                <div class="operator-form-actions">
+                    <button class="secondary-action destructive-action" type="submit"
+                        [disabled]="syncing() || !online()">
+                        {{ syncing() ? 'Reversing…' : 'Confirm reversal' }}
+                    </button>
+                    <small>The reason and version {{ item.version }} will be kept in the audit trail.</small>
+                </div>
+            </form>
+            }
+
+            <button class="calculation-toggle" type="button"
+                (click)="toggleCalculation()">
+                {{ showingCalculation() ? 'Hide calculation' : 'Show full calculation' }}
+            </button>
+
+            @if (showingCalculation()) {
+            <div class="calculation-evidence">
+                @if (calculation(); as evidence) {
+                <div class="evidence-meta">
+                    <span>Horizon</span>
+                    <strong>{{ evidence.scope.horizonStart | date:'short' }} → {{ evidence.scope.horizonEnd | date:'short' }}</strong>
+                    <span>Method</span>
+                    <strong>{{ evidence.calculationMethod }}</strong>
+                </div>
+
+                @if (ingredientEvidence(item); as ingredient) {
+                <dl class="calculation-grid">
+                    <div>
+                        <dt>Gross demand</dt>
+                        <dd>{{ format(ingredient.grossDemand) }} {{ ingredient.canonicalUnit }}</dd>
+                    </div>
+                    <div>
+                        <dt>Usable supply</dt>
+                        <dd>{{ format(ingredient.usableSupply) }} {{ ingredient.canonicalUnit }}</dd>
+                    </div>
+                    <div>
+                        <dt>Safety stock</dt>
+                        <dd>{{ format(ingredient.safetyStock) }} {{ ingredient.canonicalUnit }}</dd>
+                    </div>
+                    <div>
+                        <dt>Shortage</dt>
+                        <dd>{{ format(ingredient.shortage) }} {{ ingredient.canonicalUnit }}</dd>
+                    </div>
+                    <div>
+                        <dt>Expiry-risk surplus</dt>
+                        <dd>{{ format(ingredient.expiryRiskSurplus) }} {{ ingredient.canonicalUnit }}</dd>
+                    </div>
+                </dl>
+                <div class="evidence-sources">
+                    <p><strong>Orders:</strong> {{ ingredient.contributingOrderIds.join(', ') || 'None' }}</p>
+                    <p><strong>Recipe versions:</strong> {{ ingredient.contributingRecipeVersionIds.join(', ') || 'None' }}</p>
+                    <p><strong>Usable lots:</strong>
+                        @for (lot of ingredient.contributingLots; track lot.lotId) {
+                        <span>{{ lot.lotId }} (expires {{ lot.expiresAt }})</span>
+                        } @empty {
+                        <span>None</span>
+                        }
+                    </p>
+                    @if (ingredient.excludedLots.length) {
+                    <p><strong>Excluded lots:</strong>
+                        @for (lot of ingredient.excludedLots; track lot.lotId) {
+                        <span>{{ lot.lotId }} — {{ lot.reason }}</span>
+                        }
+                    </p>
+                    }
+                </div>
+                }
+                } @else {
+                <p>Loading calculation evidence…</p>
+                }
+            </div>
+            }
+
+            <footer>
+                <span>Valid until {{ expiryLabel(item) }}</span>
+                <span>Version {{ item.version }}</span>
+            </footer>
+        </article>
+        } @else {
+        <div class="recommendation-empty">
+            <strong>No current recommendation</strong>
+            <p>Calculate priorities to compare the next 24 hours of orders with safe, non-expired stock.</p>
+            <button class="primary-action" type="button"
+                [disabled]="generating() || !online() || !workspace()"
+                (click)="generateRecommendations()">
+                Calculate priorities
+            </button>
+        </div>
+        }
+    </section>
+
+    <section class="dashboard-grid">
+        <article class="dashboard-card attention-card">
+            <div class="card-heading">
+                <div>
+                    <p class="eyebrow">Priority</p>
+                    <h2>Needs attention</h2>
+                </div>
+                <a routerLink="/inventory">Open inventory</a>
+            </div>
+
+            <div class="attention-list">
+                @for (item of attentionItems(data.stockItems); track item.ingredient) {
+                <div class="attention-row">
+                    <span class="attention-indicator" [class.critical]="item.status === 'critical'"></span>
+                    <div>
+                        <strong>{{ item.ingredient }}</strong>
+                        <small>{{ item.quantity }}</small>
+                    </div>
+                    <span class="attention-expiry" [class.critical]="item.status === 'critical'">
+                        {{ item.expiryLabel }}
+                    </span>
+                </div>
+                } @empty {
+                <div class="empty-state">
+                    <strong>Everything looks good</strong>
+                    <span>No stock needs immediate attention.</span>
+                </div>
+                }
+            </div>
+        </article>
+
+        <article class="dashboard-card quick-actions-card">
+            <div class="card-heading">
+                <div>
+                    <p class="eyebrow">Shortcuts</p>
+                    <h2>Quick actions</h2>
+                </div>
+            </div>
+
+            <div class="quick-action-list">
+                @for (action of quickActions; track action.label) {
+                <a [routerLink]="action.route">
+                    <span class="quick-action-icon">{{ action.icon }}</span>
+                    <span>
+                        <strong>{{ action.label }}</strong>
+                        <small>{{ action.detail }}</small>
+                    </span>
+                    <b></b>
+                </a>
+                }
+            </div>
+        </article>
+
+        <article class="dashboard-card recent-card">
+            <div class="card-heading">
+                <div>
+                    <p class="eyebrow">Audit trail</p>
+                    <h2>Recent activity</h2>
+                </div>
+                <a routerLink="/activity">Record new</a>
+            </div>
+
+            <div class="recent-list">
+                @for (event of data.recentEvents; track event.description) {
+                <div class="recent-row">
+                    <span class="event-badge">{{ event.type }}</span>
+                    <div>
+                        <strong>{{ event.description }}</strong>
+                        <small>{{ event.occurredAt }}</small>
+                    </div>
+                </div>
+                }
+            </div>
+        </article>
+    </section>
+    } @else if (!error()) {
+    <section class="message">
+        <p>Loading your kitchen overview</p>
+    </section>
+    }
+</main>

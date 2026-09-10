@@ -1,0 +1,45 @@
+INSERT INTO ingredients (id, name, base_unit) VALUES
+  ('salt', 'Salt', 'g'),
+  ('eggs', 'Eggs', 'pieces'),
+  ('cooking-oil', 'Cooking oil', 'ml'),
+  ('ginger', 'Ginger', 'g'),
+  ('garlic', 'Garlic', 'g'),
+  ('green-chillies', 'Green chillies', 'g'),
+  ('mustard-seeds', 'Mustard seeds', 'g'),
+  ('urad-dal', 'Urad dal', 'g'),
+  ('moong-dal', 'Moong dal', 'g'),
+  ('besan', 'Gram flour', 'g'),
+  ('maida', 'Refined flour', 'g'),
+  ('ghee', 'Ghee', 'g');
+
+
+INSERT INTO ingredient_aliases (
+  alias_normalized,
+  ingredient_id,
+  display_name,
+  brand,
+  confidence,
+  source
+) VALUES
+  ('salt', 'salt', 'Salt', NULL, 1.0000, 'catalog'),
+  ('namak', 'salt', 'Namak', NULL, 0.9900, 'curated'),
+  ('egg', 'eggs', 'Egg', NULL, 0.9900, 'curated'),
+  ('eggs', 'eggs', 'Eggs', NULL, 1.0000, 'catalog'),
+  ('anda', 'eggs', 'Anda', NULL, 0.9800, 'curated'),
+  ('cooking oil', 'cooking-oil', 'Cooking oil', NULL, 1.0000, 'catalog'),
+  ('oil', 'cooking-oil', 'Oil', NULL, 0.9600, 'curated'),
+  ('ginger', 'ginger', 'Ginger', NULL, 1.0000, 'catalog'),
+  ('adrak', 'ginger', 'Adrak', NULL, 0.9900, 'curated'),
+  ('garlic', 'garlic', 'Garlic', NULL, 1.0000, 'catalog'),
+  ('lahsun', 'garlic', 'Lahsun', NULL, 0.9900, 'curated'),
+  ('green chilli', 'green-chillies', 'Green chilli', NULL, 0.9900, 'curated'),
+  ('green chillies', 'green-chillies', 'Green chillies', NULL, 1.0000, 'catalog'),
+  ('mustard seeds', 'mustard-seeds', 'Mustard seeds', NULL, 1.0000, 'catalog'),
+  ('rai', 'mustard-seeds', 'Rai', NULL, 0.9800, 'curated'),
+  ('urad dal', 'urad-dal', 'Urad dal', NULL, 1.0000, 'catalog'),
+  ('moong dal', 'moong-dal', 'Moong dal', NULL, 1.0000, 'catalog'),
+  ('besan', 'besan', 'Besan', NULL, 1.0000, 'catalog'),
+  ('gram flour', 'besan', 'Gram flour', NULL, 0.9900, 'curated'),
+  ('maida', 'maida', 'Maida', NULL, 1.0000, 'catalog'),
+  ('refined flour', 'maida', 'Refined flour', NULL, 0.9800, 'curated'),
+  ('ghee', 'ghee', 'Ghee', NULL, 1.0000, 'catalog');

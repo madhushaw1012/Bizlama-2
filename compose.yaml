@@ -1,0 +1,41 @@
+name: bizlama-local
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${BIZLAMA_DB_NAME:-bizlama}
+      POSTGRES_USER: ${BIZLAMA_DB_USER:-bizlama}
+      POSTGRES_PASSWORD: ${BIZLAMA_DB_PASSWORD:-bizlama-local}
+    ports:
+      - "127.0.0.1:${BIZLAMA_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - bizlama-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  app:
+    build:
+      context: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      BIZLAMA_DB_URL: jdbc:postgresql://postgres:5432/${BIZLAMA_DB_NAME:-bizlama}
+      BIZLAMA_DB_USER: ${BIZLAMA_DB_USER:-bizlama}
+      BIZLAMA_DB_PASSWORD: ${BIZLAMA_DB_PASSWORD:-bizlama-local}
+      BIZLAMA_RECEIPT_DIRECTORY: /app/data/receipts
+    ports:
+      - "127.0.0.1:${BIZLAMA_APP_PORT:-8080}:8080"
+    volumes:
+      - bizlama-app-data:/app/data
+
+volumes:
+  bizlama-postgres-data:
+  bizlama-app-data:

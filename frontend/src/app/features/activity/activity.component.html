@@ -1,0 +1,134 @@
+<main class="screen activity-screen">
+    <header class="page-heading">
+        <div>
+            <p class="eyebrow">Kitchen activity</p>
+            <h1>Record what happened</h1>
+            <p class="screen-intro">
+                Describe one or several purchases, completed dishes, or waste entries
+                in ordinary language. You will always see uncertain interpretations
+                before they are saved.
+            </p>
+        </div>
+    </header>
+
+    <section class="activity-layout">
+        <article class="screen-card capture-workbench">
+            <div class="capture-heading">
+                <span class="feature-icon">+</span>
+                <div>
+                    <p class="eyebrow">AI-assisted entry</p>
+                    <h2>Quick kitchen update</h2>
+                </div>
+            </div>
+
+            <form (ngSubmit)="parseEvent()">
+                <div class="field-heading">
+                    <label for="kitchen-update">What changed?</label>
+                    <button type="button" class="voice-button" (click)="startVoiceEntry()"
+                        [disabled]="isListening() || isProcessing() || !!proposal()"
+                        data-tooltip="Use your microphone to dictate this update">
+                        <span aria-hidden="true"></span>
+                        {{ isListening() ? 'Listening' : 'Speak update' }}
+                    </button>
+                </div>
+
+                <textarea id="kitchen-update" [ngModel]="statement()" (ngModelChange)="statement.set($event)"
+                    name="statement" placeholder="Include the action, exact quantity, unit, and item name"
+                    [disabled]="isProcessing() || !!proposal()"></textarea>
+
+                <button type="submit" class="action-button wide-action"
+                    [disabled]="isProcessing() || !!proposal() || !statement().trim()">
+                    {{ isProcessing() ? 'Understanding...' : 'Review update' }}
+                </button>
+            </form>
+
+            @if (error(); as message) {
+            <p class="form-message error-text">
+                {{ message }}
+            </p>
+            }
+
+            @if (success(); as message) {
+            <p class="form-message success-text">
+                <strong>Saved.</strong> {{ message }}
+            </p>
+            }
+
+            @if (proposal(); as currentProposal) {
+            <section class="review-card batch-review">
+                <div class="review-copy">
+                    <p class="eyebrow">
+                        {{ parsedEvents().length }}
+                        {{ parsedEvents().length === 1 ? 'update' : 'updates' }}
+                        ready for confirmation
+                    </p>
+                    <p>
+                        {{ currentProposal.riskTier }} risk · proposal version
+                        {{ currentProposal.version }} · expires
+                        {{ currentProposal.expiresAt | date: 'short' }}
+                    </p>
+
+                    @for (event of parsedEvents(); track $index) {
+                    <article class="parsed-event">
+                        <div>
+                            <h3>{{ event.summary }}</h3>
+                            <p>
+                                {{ event.type }}
+                                {{ event.item }}
+                                ({{ event.quantity }} {{ event.unit }})
+                            </p>
+                        </div>
+                        <div>
+                            <strong>Check</strong>
+                        </div>
+                    </article>
+                    }
+                </div>
+
+                <div class="review-actions">
+                    <button type="button" class="secondary-action" (click)="discardEvent()"
+                        [disabled]="isProcessing()"
+                        data-tooltip="Discard this server-side proposal and return to the text">
+                        Edit
+                    </button>
+                    <button type="button" class="action-button" (click)="confirmEvent()" [disabled]="isProcessing()"
+                        data-tooltip="Save every reviewed item as one operation">
+                        Confirm all &amp; save
+                    </button>
+                </div>
+            </section>
+            }
+        </article>
+
+        <aside class="activity-aside">
+            <article class="screen-card entry-tips">
+                <p class="eyebrow">Helpful format</p>
+                <h2>Say what happened naturally</h2>
+                <p>
+                    Include the action, amount and item. You can record several items
+                    in one update.
+                </p>
+                <ul>
+                    <li>Start with the action: bought, made, or wasted.</li>
+                    <li>Add the exact quantity and unit.</li>
+                    <li>Use the item name stored for this kitchen.</li>
+                </ul>
+            </article>
+
+            <article class="screen-card">
+                <p class="eyebrow">Latest</p>
+                <h2>Recent activity</h2>
+
+                @for (event of recentEvents(); track event.description) {
+                <div class="compact-event">
+                    <span>{{ event.type }}</span>
+                    <div>
+                        <strong>{{ event.description }}</strong>
+                        <small>{{ event.occurredAt }}</small>
+                    </div>
+                </div>
+                }
+            </article>
+        </aside>
+    </section>
+</main>

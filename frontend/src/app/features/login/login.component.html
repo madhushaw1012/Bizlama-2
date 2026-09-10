@@ -1,0 +1,65 @@
+<main class="login-screen">
+    <section class="login-story" aria-label="BizLaMa product introduction">
+        <a class="login-brand" href="/login">
+            <img class="brand-mark login-brand-mark" src="/lama.jpeg" alt="BizLaMa logo">
+            <span>
+                <small>KITCHEN OPERATIONS</small>
+                <strong>BizLaMa</strong>
+            </span>
+        </a>
+
+        <div>
+            <p class="eyebrow">One calm command centre</p>
+            <h1>Run the kitchen,<br>not the paperwork.</h1>
+            <p>
+                Orders, stock, recipes, receipts and food-waste intelligence—connected
+                in one private workspace.
+            </p>
+        </div>
+
+        <small>Built for practical, everyday food businesses.</small>
+    </section>
+
+    <section class="login-panel">
+        <form class="login-card" (ngSubmit)="signIn()">
+            <p class="eyebrow">Protected workspace</p>
+            <h2>Welcome back</h2>
+            <p class="login-intro">Sign in as the kitchen owner to continue.</p>
+
+            <label for="login-email">
+                Email address
+                <input id="login-email" type="email" autocomplete="username" [ngModel]="email()"
+                    (ngModelChange)="email.set($event)" name="email" required>
+            </label>
+
+            <label for="login-password">
+                Password
+                <div class="password-field">
+                    <input id="login-password" [type]="showPassword() ? 'text' : 'password'"
+                        autocomplete="current-password" [ngModel]="password()" (ngModelChange)="password.set($event)"
+                        name="password" required>
+
+                    <button type="button" (click)="togglePasswordVisibility()"
+                        [attr.aria-label]="showPassword() ? 'Hide password' : 'Show password'"
+                        data-tooltip="Show or hide your password">
+                        {{ showPassword() ? 'Hide' : 'Show' }}
+                    </button>
+                </div>
+            </label>
+
+            @if (error()) {
+            <p class="login-error" role="alert">{{ error() }}</p>
+            }
+
+            <button class="action-button wide-action" type="submit"
+                [disabled]="busy() || !email().trim() || !password()">
+                {{ busy() ? 'Signing in...' : 'Sign in securely' }}
+            </button>
+
+            <p class="login-note">
+                <span aria-hidden="true"></span>
+                Your session is kept only in this browser tab.
+            </p>
+        </form>
+    </section>
+</main>
