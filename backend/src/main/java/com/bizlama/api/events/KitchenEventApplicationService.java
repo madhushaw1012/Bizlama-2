@@ -1,8 +1,11 @@
 package com.bizlama.api.events;
 
 import com.bizlama.api.config.WorkspaceProperties;
+import com.bizlama.api.domain.Dish;
 import com.bizlama.api.domain.RecipeVersion;
 import com.bizlama.api.domain.StockMovement;
+import com.bizlama.api.feedback.FeedbackService;
+import com.bizlama.api.orders.OrderApplicationService;
 import com.bizlama.api.shelflife.ShelfLifeGuidanceProvider;
 import com.bizlama.api.stock.ExpiryProvenance;
 import com.bizlama.api.stock.InventoryAllocationService;
@@ -28,6 +31,8 @@ public class KitchenEventApplicationService {
     private final InventoryPurchaseService purchases;
     private final InventoryAllocationService allocations;
     private final JdbcClient jdbc;
+    private final OrderApplicationService orders;
+    private final FeedbackService feedback;
     private final WorkspaceProperties workspace;
 
     public KitchenEventApplicationService(
@@ -35,6 +40,8 @@ public class KitchenEventApplicationService {
             ShelfLifeGuidanceProvider shelfLife,
             InventoryPurchaseService purchases,
             InventoryAllocationService allocations,
+            OrderApplicationService orders,
+            FeedbackService feedback,
             JdbcClient jdbc,
             WorkspaceProperties workspace
     ) {
@@ -42,6 +49,8 @@ public class KitchenEventApplicationService {
         this.shelfLife = shelfLife;
         this.purchases = purchases;
         this.allocations = allocations;
+        this.orders = orders;
+        this.feedback = feedback;
         this.jdbc = jdbc;
         this.workspace = workspace;
     }
@@ -57,12 +66,20 @@ public class KitchenEventApplicationService {
         switch (event.type()) {
             case PURCHASE -> {
                 LocalDate purchased = kitchenDate(actionAt);
-                var guidance = shelfLife
-                        .findForIngredient(event.itemId())
-                        .orElseThrow(() -> new IllegalStateException(
-                                "Purchase expiry requires a reviewed shelf-life rule."
-                        ));
-                LocalDate expires = guidance.expiresOn(purchased);
+                LocalDate expires;
+                ExpiryProvenance provenance;
+                if (event.expiresAt() != null) {
+                    expires = event.expiresAt();
+                    provenance = ExpiryProvenance.OWNER_CONFIRMED;
+                } else {
+                    var guidance = shelfLife
+                            .findForIngredient(event.itemId())
+                            .orElseThrow(() -> new IllegalStateException(
+                                    "Purchase expiry requires a reviewed shelf-life rule."
+                            ));
+                    expires = guidance.expiresOn(purchased);
+                    provenance = ExpiryProvenance.REVIEWED_SHELF_LIFE_RULE;
+                }
                 purchases.add(new InventoryPurchaseService.Purchase(
                         null,
                         workspace.kitchenId(),
@@ -74,7 +91,7 @@ public class KitchenEventApplicationService {
                         event.unit(),
                         purchased,
                         expires,
-                        ExpiryProvenance.REVIEWED_SHELF_LIFE_RULE,
+                        provenance,
                         "kitchen-event:" + proposalId,
                         "kitchen-event",
                         proposalId,
@@ -99,9 +116,19 @@ public class KitchenEventApplicationService {
                     proposalId,
                     actionAt
             );
+            case ORDER -> orders.create(
+                    List.of(new OrderApplicationService.Line(
+                            event.itemId(),
+                            event.quantity().intValueExact()
+                    )),
+                    actionAt
+            );
+            case FEEDBACK -> applyFeedback(event);
         }
 
-        repository.addActivity(label(event.type()), event.summary());
+        if (event.intent() == KitchenEventIntent.INVENTORY_UPDATE) {
+            repository.addActivity(label(event.type()), event.summary());
+        }
     }
 
     @Transactional
@@ -115,9 +142,41 @@ public class KitchenEventApplicationService {
                     "At least one kitchen event is required."
             );
         }
+        boolean containsOrder = events.stream()
+                .anyMatch(event -> event.type() == KitchenEventType.ORDER);
+        if (containsOrder) {
+            if (events.stream()
+                    .anyMatch(event -> event.type() != KitchenEventType.ORDER)) {
+                throw new IllegalArgumentException(
+                        "An order proposal cannot mix other activity intents."
+                );
+            }
+            events.forEach(this::validate);
+            orders.create(events.stream()
+                    .map(event -> new OrderApplicationService.Line(
+                            event.itemId(),
+                            event.quantity().intValueExact()
+                    ))
+                    .toList(), actionAt);
+            return;
+        }
         for (ParsedKitchenEvent event : events) {
             apply(event, proposalId, actionAt);
         }
+    }
+
+    private void applyFeedback(ParsedKitchenEvent event) {
+        Dish dish = repository.dish(event.itemId())
+                .filter(Dish::active)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Feedback dish is no longer active."
+                ));
+        feedback.capture(
+                dish.activeRecipeVersionId(),
+                event.note(),
+                event.quantity().intValueExact(),
+                "kitchen-event"
+        );
     }
 
     private void applyProduction(
@@ -201,6 +260,24 @@ public class KitchenEventApplicationService {
         if (event.unit() == null || event.unit().isBlank()) {
             throw new IllegalArgumentException("Kitchen event unit is required.");
         }
+        if ((event.type() == KitchenEventType.ORDER
+                || event.type() == KitchenEventType.FEEDBACK)
+                && event.quantity().stripTrailingZeros().scale() > 0) {
+            throw new IllegalArgumentException(
+                    "Order quantities and ratings must be whole numbers."
+            );
+        }
+        if (event.type() == KitchenEventType.FEEDBACK
+                && (event.quantity().intValueExact() < 1
+                || event.quantity().intValueExact() > 5)) {
+            throw new IllegalArgumentException(
+                    "Feedback rating must be between 1 and 5."
+            );
+        }
+        if (event.type() == KitchenEventType.FEEDBACK
+                && (event.note() == null || event.note().isBlank())) {
+            throw new IllegalArgumentException("Feedback text is required.");
+        }
     }
 
     private String label(KitchenEventType type) {
@@ -208,6 +285,8 @@ public class KitchenEventApplicationService {
             case PURCHASE -> "Purchase";
             case PRODUCTION -> "Production";
             case WASTE -> "Waste";
+            case ORDER -> "Order";
+            case FEEDBACK -> "Feedback";
         };
     }
 }

@@ -48,7 +48,7 @@ public class DemandCalculationService {
     private static final Duration MAX_AS_OF_AGE = Duration.ofMinutes(5);
     private static final Duration MAX_FUTURE_CLOCK_SKEW = Duration.ofSeconds(5);
     private static final List<String> INCLUDED_ORDER_STATUSES =
-            List.of("QUEUED", "PREPARING");
+            List.of("QUEUED");
 
     private final JdbcClient jdbc;
     private final UnitConversionService units;
@@ -626,7 +626,7 @@ public class DemandCalculationService {
                          AND recipe.kitchen_id = orders.kitchen_id
                         WHERE orders.kitchen_id = :kitchen
                           AND orders.location_id = :location
-                          AND orders.status IN ('QUEUED', 'PREPARING')
+                          AND orders.status = 'QUEUED'
                           AND orders.created_at <= :asOf
                           AND orders.required_at < :horizonEnd
                           AND item.prepared_quantity < item.quantity
@@ -682,7 +682,7 @@ public class DemandCalculationService {
                          AND recipe_item.kitchen_id = orders.kitchen_id
                         WHERE orders.kitchen_id = :kitchen
                           AND orders.location_id = :location
-                          AND orders.status IN ('QUEUED', 'PREPARING')
+                          AND orders.status = 'QUEUED'
                           AND orders.created_at <= :asOf
                           AND orders.required_at < :horizonEnd
                           AND item.prepared_quantity < item.quantity
@@ -748,7 +748,7 @@ public class DemandCalculationService {
                          AND ingredient.kitchen_id = recipe_item.kitchen_id
                         WHERE orders.kitchen_id = :kitchen
                           AND orders.location_id = :location
-                          AND orders.status IN ('QUEUED', 'PREPARING')
+                          AND orders.status = 'QUEUED'
                           AND orders.created_at <= :asOf
                           AND orders.required_at < :horizonEnd
                           AND item.prepared_quantity < item.quantity

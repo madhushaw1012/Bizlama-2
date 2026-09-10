@@ -48,6 +48,7 @@ class DemandRecommendationIntegrationTest {
     private String dishId;
     private String exactRecipeVersionId;
     private String currentRecipeVersionId;
+    private String orderId;
     private String survivingLotId;
     private DemandScope scope;
 
@@ -58,7 +59,7 @@ class DemandRecommendationIntegrationTest {
         dishId = "demand-dish-" + suffix;
         exactRecipeVersionId = "demand-recipe-v1-" + suffix;
         currentRecipeVersionId = "demand-recipe-v2-" + suffix;
-        String orderId = "demand-order-" + suffix;
+        orderId = "demand-order-" + suffix;
 
         Instant asOf = Instant.now().plusSeconds(2);
         Instant orderedAt = asOf.minusSeconds(60);
@@ -230,6 +231,63 @@ class DemandRecommendationIntegrationTest {
                     assertThat(lot.expiryRiskQuantity()).isEqualByComparingTo("500");
                 });
     }
+
+    @Test
+    void queuedPrioritiesAggregateDishAcrossOrdersAndDropAdvancedOrders() {
+        String overlappingOrder = "demand-overlap-" + UUID.randomUUID();
+        jdbc.sql("""
+                        INSERT INTO customer_orders
+                        (id, total, status, created_at, kitchen_id, location_id,
+                         required_at)
+                        VALUES
+                        (:id, 20.00, 'QUEUED', :createdAt, :kitchen, :location,
+                         :requiredAt)
+                        """)
+                .param("id", overlappingOrder)
+                .param("createdAt", scope.asOf().minusSeconds(30))
+                .param("kitchen", KITCHEN)
+                .param("location", LOCATION)
+                .param("requiredAt", scope.asOf().plusSeconds(60 * 60))
+                .update();
+        jdbc.sql("""
+                        INSERT INTO order_items
+                        (order_id, line_number, dish_id, quantity, unit_price,
+                         recipe_version_id, prepared_quantity)
+                        VALUES (:order, 1, :dish, 2, 10.00, :recipe, 0)
+                        """)
+                .param("order", overlappingOrder)
+                .param("dish", dishId)
+                .param("recipe", exactRecipeVersionId)
+                .update();
+
+        var before = demand.calculate(scope).preparations().stream()
+                .filter(value -> dishId.equals(value.dishId()))
+                .toList();
+        assertThat(before).singleElement().satisfies(priority -> {
+            assertThat(priority.dishName()).isEqualTo("Demand test dish");
+            assertThat(priority.quantity()).isEqualByComparingTo("5");
+            assertThat(priority.contributingOrderIds())
+                    .containsExactly(overlappingOrder, orderId);
+        });
+        assertThat(demand.calculate(scope).includedOrderStatuses())
+                .containsExactly("QUEUED");
+
+        repository.updateOrderStatus(
+                orderId,
+                com.bizlama.api.domain.Order.Status.PREPARING,
+                "priority-test"
+        );
+
+        var after = demand.calculate(scope).preparations().stream()
+                .filter(value -> dishId.equals(value.dishId()))
+                .toList();
+        assertThat(after).singleElement().satisfies(priority -> {
+            assertThat(priority.quantity()).isEqualByComparingTo("2");
+            assertThat(priority.contributingOrderIds())
+                    .containsExactly(overlappingOrder);
+        });
+    }
+
     @Test
     void referencedIngredientCannotChangeQuantityDimension() {
         assertThatThrownBy(() -> repository.saveIngredient(new Ingredient(
@@ -520,7 +578,7 @@ class DemandRecommendationIntegrationTest {
                         """)
                 .param("recipe", exactRecipeVersionId)
                 .query(String.class)
-                .single()).isEqualTo("READY");
+                .single()).isEqualTo("DONE");
         assertThat(jdbc.sql("""
                         SELECT recipe_version_id
                         FROM recommendation_actions
@@ -569,7 +627,7 @@ class DemandRecommendationIntegrationTest {
                 .param("recipe", exactRecipeVersionId)
                 .param("actionNote", "%" + applied.appliedActionId() + "%")
                 .query(String.class)
-                .list()).containsExactlyInAnyOrder("PREPARING", "READY");
+                .list()).containsExactlyInAnyOrder("PREPARING", "DONE");
         assertThat(jdbc.sql("""
                         SELECT COUNT(*)
                         FROM analytics_outbox event
@@ -583,7 +641,7 @@ class DemandRecommendationIntegrationTest {
                 .param("actionPayload", "%" + applied.appliedActionId() + "%")
                 .query(Long.class)
                 .single()).isEqualTo(2L);
-        String completedOrderId = jdbc.sql("""
+        String doneOrderId = jdbc.sql("""
                         SELECT item.order_id
                         FROM order_items item
                         WHERE item.recipe_version_id = :recipe
@@ -591,21 +649,16 @@ class DemandRecommendationIntegrationTest {
                 .param("recipe", exactRecipeVersionId)
                 .query(String.class)
                 .single();
-        var completedOrder = repository.updateOrderStatus(
-                completedOrderId,
-                com.bizlama.api.domain.Order.Status.COMPLETED,
-                "test-owner"
-        );
-        assertThat(completedOrder.status())
-                .isEqualTo(com.bizlama.api.domain.Order.Status.COMPLETED);
+        assertThat(repository.order(doneOrderId).orElseThrow().status())
+                .isEqualTo(com.bizlama.api.domain.Order.Status.DONE);
         assertThat(jdbc.sql("""
                         SELECT COUNT(*)
                         FROM order_status_history
                         WHERE order_id = :order
-                          AND status = 'COMPLETED'
+                          AND status = 'DONE'
                           AND changed_by = 'test-owner'
                         """)
-                .param("order", completedOrderId)
+                .param("order", doneOrderId)
                 .query(Long.class)
                 .single()).isEqualTo(1L);
         assertThat(jdbc.sql("""

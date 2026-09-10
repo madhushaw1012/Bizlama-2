@@ -18,14 +18,14 @@ import org.springframework.web.server.ResponseStatusException;
 @RequestMapping("/api/events")
 public class KitchenEventController {
 
-    private final KitchenEventParser parser;
+    private final KitchenEventIntentRouter router;
     private final KitchenEventProposalService proposals;
 
     public KitchenEventController(
-            KitchenEventParser parser,
+            KitchenEventIntentRouter router,
             KitchenEventProposalService proposals
     ) {
-        this.parser = parser;
+        this.router = router;
         this.proposals = proposals;
     }
 
@@ -33,8 +33,16 @@ public class KitchenEventController {
     public ParseKitchenEventResponse parse(
             @Valid @RequestBody ParseKitchenEventRequest request
     ) {
-        List<ParsedKitchenEvent> events =
-                parser.parseMany(request.statement());
+        List<ParsedKitchenEvent> events;
+        try {
+            events = router.route(request.statement());
+        } catch (ResponseStatusException error) {
+            return ParseKitchenEventResponse.unknown(
+                    error.getReason() == null
+                            ? "Clarify the activity and try again."
+                            : error.getReason()
+            );
+        }
         KitchenEventProposalService.Proposal proposal =
                 proposals.create(request.statement(), events);
 

@@ -10,7 +10,7 @@ export interface Dish {
     categoryName: string;
 }
 
-export type OrderStatus = 'QUEUED' | 'PREPARING' | 'READY' | 'COMPLETED' | 'CANCELLED';
+export type OrderStatus = 'QUEUED' | 'PREPARING' | 'DONE' | 'CANCELLED';
 
 export interface Order {
     id: string;

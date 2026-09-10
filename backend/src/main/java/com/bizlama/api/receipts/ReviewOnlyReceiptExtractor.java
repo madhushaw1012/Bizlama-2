@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 @ConditionalOnProperty(
-        name = "bizlama.receipts.ai-enabled",
+        name = "bizlama.receipts.ai.enabled",
         havingValue = "false",
         matchIfMissing = true
 )

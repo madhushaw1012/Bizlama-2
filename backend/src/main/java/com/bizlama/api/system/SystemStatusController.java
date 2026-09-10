@@ -3,6 +3,9 @@ package com.bizlama.api.system;
 import com.bizlama.api.analytics.raw.RawAnalyticsHealthIndicator;
 import com.bizlama.api.analytics.raw.RawAnalyticsProperties;
 import com.bizlama.api.receipts.ReceiptStorageHealthIndicator;
+import com.bizlama.api.ai.GeminiModelClient.Operation;
+import com.bizlama.api.ai.GeminiRuntimeStatus;
+import com.bizlama.api.ai.GeminiRuntimeStatus.Observation;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.actuate.health.Status;
@@ -21,32 +24,47 @@ public class SystemStatusController {
     private final Environment springEnvironment;
     private final String databaseUrl;
     private final String receiptStorage;
-    private final boolean aiEnabled;
+    private final boolean receiptAiEnabled;
+    private final String receiptAiModel;
+    private final boolean explanationAiEnabled;
+    private final String explanationAiModel;
     private final String authMode;
     private final ReceiptStorageHealthIndicator receiptStorageHealth;
     private final RawAnalyticsProperties rawAnalyticsProperties;
     private final RawAnalyticsHealthIndicator rawAnalyticsHealth;
+    private final GeminiRuntimeStatus geminiStatus;
 
     public SystemStatusController(
             JdbcClient jdbc,
             Environment springEnvironment,
             @Value("${spring.datasource.url}") String databaseUrl,
             @Value("${bizlama.receipts.storage-mode:local}") String receiptStorage,
-            @Value("${bizlama.receipts.ai-enabled:false}") boolean aiEnabled,
+            @Value("${bizlama.receipts.ai.enabled:false}")
+            boolean receiptAiEnabled,
+            @Value("${bizlama.receipts.ai.model:}") String receiptAiModel,
+            @Value("${bizlama.explanations.vertex.enabled:false}")
+            boolean explanationAiEnabled,
+            @Value("${bizlama.explanations.vertex.model:}")
+            String explanationAiModel,
             @Value("${bizlama.auth.mode:local}") String authMode,
             ReceiptStorageHealthIndicator receiptStorageHealth,
             RawAnalyticsProperties rawAnalyticsProperties,
-            RawAnalyticsHealthIndicator rawAnalyticsHealth
+            RawAnalyticsHealthIndicator rawAnalyticsHealth,
+            GeminiRuntimeStatus geminiStatus
     ) {
         this.jdbc = jdbc;
         this.springEnvironment = springEnvironment;
         this.databaseUrl = databaseUrl;
         this.receiptStorage = receiptStorage;
-        this.aiEnabled = aiEnabled;
+        this.receiptAiEnabled = receiptAiEnabled;
+        this.receiptAiModel = receiptAiModel;
+        this.explanationAiEnabled = explanationAiEnabled;
+        this.explanationAiModel = explanationAiModel;
         this.authMode = authMode;
         this.receiptStorageHealth = receiptStorageHealth;
         this.rawAnalyticsProperties = rawAnalyticsProperties;
         this.rawAnalyticsHealth = rawAnalyticsHealth;
+        this.geminiStatus = geminiStatus;
     }
 
     @GetMapping("/status")
@@ -96,15 +114,21 @@ public class SystemStatusController {
                                                 : "Enabled dependency health check failed")
                                         : "Raw retention worker is disabled in this process"
                         ),
-                        new Connection(
+                        aiConnection(
                                 "Receipt recognition",
-                                aiEnabled
-                                        ? "Vertex AI configured"
-                                        : "Manual review mode",
-                                !aiEnabled,
-                                aiEnabled
-                                        ? "Optional provider is checked per request; fallback remains active"
-                                        : "Deterministic fallback is active"
+                                receiptAiEnabled,
+                                receiptAiModel,
+                                Operation.RECEIPT_EXTRACTION,
+                                "Manual review mode",
+                                "Deterministic manual review is active"
+                        ),
+                        aiConnection(
+                                "Recommendation explanations",
+                                explanationAiEnabled,
+                                explanationAiModel,
+                                Operation.RECOMMENDATION_EXPLANATION,
+                                "Deterministic explanations",
+                                "Deterministic explanation fallback is active"
                         ),
                         new Connection(
                                 "Sign-in",
@@ -117,6 +141,50 @@ public class SystemStatusController {
                                         : "Local token service is active"
                         )
                 )
+        );
+    }
+
+    private Connection aiConnection(
+            String name,
+            boolean enabled,
+            String model,
+            Operation operation,
+            String disabledProvider,
+            String disabledDetail
+    ) {
+        if (!enabled) {
+            return new Connection(
+                    name,
+                    disabledProvider,
+                    false,
+                    disabledDetail,
+                    "DISABLED",
+                    null
+            );
+        }
+        Observation observation = geminiStatus.observation(operation)
+                .orElse(null);
+        if (observation == null) {
+            return new Connection(
+                    name,
+                    "Vertex AI (" + model + ")",
+                    false,
+                    "Configured; no bounded request has established reachability",
+                    "CONFIGURED",
+                    null
+            );
+        }
+        boolean reachable = observation.state()
+                == GeminiRuntimeStatus.State.REACHABLE;
+        return new Connection(
+                name,
+                "Vertex AI (" + model + ")",
+                reachable,
+                reachable
+                        ? "Last bounded request succeeded"
+                        : "Last request failed safely; fallback remains active",
+                observation.state().name(),
+                observation
         );
     }
 
@@ -144,7 +212,17 @@ public class SystemStatusController {
             String name,
             String provider,
             boolean connected,
-            String detail
+            String detail,
+            String state,
+            Observation diagnostic
     ) {
+        public Connection(
+                String name,
+                String provider,
+                boolean connected,
+                String detail
+        ) {
+            this(name, provider, connected, detail, null, null);
+        }
     }
 }

@@ -1123,16 +1123,16 @@ public class OperationalRepository {
                                 THEN 1 ELSE 0 END),
 
                             SUM(CASE
-                                WHEN status = 'READY'
+                                WHEN status = 'DONE'
                                 THEN 1 ELSE 0 END),
 
                             SUM(CASE
-                                WHEN status = 'COMPLETED'
+                                WHEN status = 'DONE'
                                  AND CAST(updated_at AS DATE) = CURRENT_DATE
                                 THEN 1 ELSE 0 END),
 
                             COALESCE(SUM(CASE
-                                WHEN status = 'COMPLETED'
+                                WHEN status = 'DONE'
                                  AND CAST(updated_at AS DATE) = CURRENT_DATE
                                 THEN total ELSE 0 END), 0)
 
@@ -1398,6 +1398,27 @@ public class OperationalRepository {
     // FEEDBACK
     // ============================================================
 
+    public Optional<Feedback> feedbackById(String id) {
+        return scopedSql("""
+                        SELECT feedback.id, feedback.recipe_id,
+                               feedback.feedback_text, feedback.rating,
+                               feedback.occurred_at, feedback.source
+                        FROM feedback
+                        WHERE feedback.id = :id
+                          AND feedback.kitchen_id = :workspaceKitchen
+                        """)
+                .param("id", id)
+                .query((rs, rowNum) ->
+                        new Feedback(
+                                rs.getString(1),
+                                rs.getString(2),
+                                rs.getString(3),
+                                rs.getInt(4),
+                                rs.getObject(5, LocalDate.class),
+                                rs.getString(6)))
+                .optional();
+    }
+
     public List<Feedback> feedback(String recipeId) {
 
         String sql;
@@ -1450,8 +1471,14 @@ public class OperationalRepository {
                         SELECT :id, recipe.id, :text,
                                :rating, :occurred, :source, :workspaceKitchen
                         FROM recipe_versions recipe
+                        JOIN dishes dish
+                          ON dish.id = recipe.dish_id
+                         AND dish.kitchen_id = recipe.kitchen_id
                         WHERE recipe.id = :recipe
                           AND recipe.kitchen_id = :workspaceKitchen
+                          AND recipe.active = TRUE
+                          AND dish.active = TRUE
+                          AND dish.active_recipe_version_id = recipe.id
                         """)
                 .param("id", value.id())
                 .param("recipe", value.recipeId())
@@ -1665,6 +1692,7 @@ public class OperationalRepository {
                                e.proposed_value,
                                e.value_unit,
                                e.test_duration_days,
+                               e.approved_at,
                                e.status
                         FROM recipe_experiments e
                         JOIN dishes d
@@ -1685,8 +1713,9 @@ public class OperationalRepository {
                                 rs.getBigDecimal(7),
                                 rs.getString(8),
                                 rs.getInt(9),
+                                instant(rs, "approved_at"),
                                 ExperimentStatus.valueOf(
-                                        rs.getString(10))))
+                                        rs.getString(11))))
                 .optional()
                 .orElseThrow(() ->
                         new IllegalArgumentException("Experiment not found"));
@@ -1695,18 +1724,51 @@ public class OperationalRepository {
     @Transactional
     public void approveExperiment(String reference) {
 
+        approveExperiment(reference, "owner");
+    }
+
+    @Transactional
+    public void approveExperiment(String reference, String actor) {
+
+        if (actor == null || actor.isBlank()) {
+            throw new IllegalArgumentException("Approver is required.");
+        }
+
         String id = experimentId(reference);
+        String status = scopedSql("""
+                        SELECT status
+                        FROM recipe_experiments
+                        WHERE id = :id
+                          AND kitchen_id = :workspaceKitchen
+                        FOR UPDATE
+                        """)
+                .param("id", id)
+                .query(String.class)
+                .optional()
+                .orElseThrow(() ->
+                        new IllegalArgumentException("Experiment not found"));
+        if ("ACTIVE".equals(status)) {
+            return;
+        }
+        if (!"PROPOSED".equals(status)) {
+            throw new IllegalStateException(
+                    "Only a proposed experiment can be approved."
+            );
+        }
         Instant now = Instant.now();
 
         int changed = scopedSql("""
                         UPDATE recipe_experiments
                         SET status = 'ACTIVE',
+                            approved_by = :actor,
                             approved_at = :now,
                             updated_at = :now,
                             version = version + 1
                         WHERE id = :id
                           AND kitchen_id = :workspaceKitchen
+                          AND status = 'PROPOSED'
                         """)
+                .param("actor", actor.trim())
                 .param("now", JdbcTimestamp.utc(now))
                 .param("id", id)
                 .update();
@@ -1726,12 +1788,15 @@ public class OperationalRepository {
                         FROM recipe_experiments
                         WHERE kitchen_id = :workspaceKitchen
                           AND (id = :reference OR dish_id = :reference)
+                          AND status IN ('PROPOSED', 'ACTIVE')
                         ORDER BY
                             CASE
                                 WHEN id = :reference THEN 0
                                 ELSE 1
                             END,
-                            id DESC
+                            CASE WHEN status = 'ACTIVE' THEN 0 ELSE 1 END,
+                            updated_at DESC,
+                            id
                         LIMIT 1
                         """)
                 .param("reference", reference)

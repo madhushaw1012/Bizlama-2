@@ -403,7 +403,7 @@ class TenantScopeIntegrationTest {
 
         assertThatThrownBy(() -> repository.updateOrderStatus(
                 otherOrder,
-                Order.Status.COMPLETED
+                Order.Status.DONE
         )).isInstanceOf(IllegalArgumentException.class);
         assertThat(text("customer_orders", "status", "id", otherOrder))
                 .isEqualTo("QUEUED");
@@ -631,7 +631,7 @@ class TenantScopeIntegrationTest {
 
         assertThatThrownBy(() -> repository.updateOrderStatus(
                 order,
-                Order.Status.COMPLETED
+                Order.Status.DONE
         )).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> receiptWorkflow.addManualLine(
                 receipt,

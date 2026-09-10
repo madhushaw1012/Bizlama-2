@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.bizlama.api.domain.Order;
 import com.bizlama.api.domain.StockMovement;
 import com.bizlama.api.orders.OrderTransitionConflictException;
+import com.bizlama.api.orders.OrderTransitionService;
 import com.bizlama.api.stock.ExpiryProvenance;
 import com.bizlama.api.stock.FutureDatedPurchaseException;
 import com.bizlama.api.stock.InventoryAllocationService;
@@ -44,22 +45,21 @@ class OrderInventoryBoundaryIntegrationTest {
     private OperationalRepository repository;
 
     @Autowired
+    private OrderTransitionService transitions;
+
+    @Autowired
     private InventoryAllocationService allocations;
 
     @Autowired
     private InventoryPurchaseService purchases;
 
-    @ParameterizedTest
-    @EnumSource(
-            value = Order.Status.class,
-            names = {"READY", "COMPLETED"}
-    )
-    void queuedOrderCannotSkipPreparing(Order.Status target) {
+    @Test
+    void queuedOrderCannotSkipPreparing() {
         long historyBefore = historyCount(SEEDED_ORDER);
 
         assertThatThrownBy(() -> repository.updateOrderStatus(
                 SEEDED_ORDER,
-                target,
+                Order.Status.DONE,
                 "integrity-test"
         )).isInstanceOf(OrderTransitionConflictException.class)
                 .hasMessageContaining("cannot transition from QUEUED");
@@ -72,7 +72,7 @@ class OrderInventoryBoundaryIntegrationTest {
     }
 
     @Test
-    void readyRequiresCompletedDurableProductionEvidenceForEveryLine() {
+    void automatedDoneRequiresCompletedDurableProductionEvidenceForEveryLine() {
         jdbc.sql("""
                         UPDATE customer_orders
                         SET status = 'PREPARING'
@@ -88,10 +88,15 @@ class OrderInventoryBoundaryIntegrationTest {
                 .param("order", SEEDED_ORDER)
                 .update();
 
-        assertThatThrownBy(() -> repository.updateOrderStatus(
+        assertThatThrownBy(() -> transitions.transition(
+                KITCHEN,
+                LOCATION,
                 SEEDED_ORDER,
-                Order.Status.READY,
-                "integrity-test"
+                Order.Status.DONE,
+                Instant.now(),
+                "integrity-test",
+                "Automated production completion.",
+                "missing-production-action"
         )).isInstanceOf(OrderTransitionConflictException.class)
                 .hasMessageContaining("completed durable production actions");
 
@@ -101,7 +106,7 @@ class OrderInventoryBoundaryIntegrationTest {
     @ParameterizedTest
     @EnumSource(
             value = Order.Status.class,
-            names = {"COMPLETED", "CANCELLED"}
+            names = {"DONE", "CANCELLED"}
     )
     void terminalOrdersCannotBeReopened(Order.Status terminal) {
         jdbc.sql("""
@@ -124,23 +129,30 @@ class OrderInventoryBoundaryIntegrationTest {
     }
 
     @Test
-    void preparingCannotSkipReadyBeforeCompletion() {
-        jdbc.sql("""
-                        UPDATE customer_orders
-                        SET status = 'PREPARING'
-                        WHERE id = :order
-                        """)
-                .param("order", SEEDED_ORDER)
-                .update();
+    void queuedPreparingDoneLifecyclePersistsAndRejectsDuplicate() {
+        Order preparing = repository.updateOrderStatus(
+                SEEDED_ORDER,
+                Order.Status.PREPARING,
+                "integrity-test"
+        );
+        assertThat(preparing.status()).isEqualTo(Order.Status.PREPARING);
+
+        Order done = repository.updateOrderStatus(
+                SEEDED_ORDER,
+                Order.Status.DONE,
+                "integrity-test"
+        );
+        assertThat(done.status()).isEqualTo(Order.Status.DONE);
+        assertThat(orderStatus(SEEDED_ORDER)).isEqualTo("DONE");
+        long historyAfterDone = historyCount(SEEDED_ORDER);
 
         assertThatThrownBy(() -> repository.updateOrderStatus(
                 SEEDED_ORDER,
-                Order.Status.COMPLETED,
+                Order.Status.DONE,
                 "integrity-test"
         )).isInstanceOf(OrderTransitionConflictException.class)
-                .hasMessageContaining("cannot transition from PREPARING");
-
-        assertThat(orderStatus(SEEDED_ORDER)).isEqualTo("PREPARING");
+                .hasMessageContaining("cannot transition from DONE");
+        assertThat(historyCount(SEEDED_ORDER)).isEqualTo(historyAfterDone);
     }
 
     @Test

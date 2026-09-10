@@ -30,6 +30,9 @@ class FeedbackExperimentIntegrationTest {
     private FeedbackService feedback;
 
     @Autowired
+    private ExperimentService experiments;
+
+    @Autowired
     private OperationalRepository repository;
 
     private String dishId;
@@ -112,6 +115,75 @@ class FeedbackExperimentIntegrationTest {
     }
 
     @Test
+    void persistedSeedFeedbackCreatesANewMenuExperimentOnReconciliation() {
+        ExperimentResponse proposed =
+                experiments.getExperiment("demo-mango-lassi");
+
+        assertThat(proposed.dish()).isEqualTo("Mango Lassi");
+        assertThat(proposed.theme()).isEqualTo("Too sweet");
+        assertThat(proposed.themeCount()).isEqualTo(3);
+        assertThat(proposed.feedbackCount()).isEqualTo(5);
+        assertThat(proposed.status()).isEqualTo(ExperimentStatus.PROPOSED);
+        assertThat(activeRecipe("demo-mango-lassi"))
+                .isEqualTo("demo-mango-lassi-v1");
+    }
+
+    @Test
+    void deletingEvidenceWithdrawsOnlyAnUnapprovedProposal() {
+        feedback.capture(recipeId, "The filling was too salty.", 3, "test");
+        feedback.capture(recipeId, "This tasted salty today.", 3, "test");
+        feedback.capture(recipeId, "The paneer is over salted.", 3, "test");
+
+        String feedbackId = jdbc.sql("""
+                        SELECT id FROM feedback
+                        WHERE recipe_id = :recipe AND source = 'test'
+                        ORDER BY id
+                        LIMIT 1
+                        """)
+                .param("recipe", recipeId)
+                .query(String.class)
+                .single();
+        feedback.delete(feedbackId);
+
+        assertThatThrownBy(() -> experiments.getExperiment(dishId))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Experiment not found");
+        assertThat(jdbc.sql("""
+                        SELECT status FROM recipe_experiments
+                        WHERE dish_id = :dish
+                        """)
+                .param("dish", dishId)
+                .query(String.class)
+                .single()).isEqualTo("CANCELLED");
+        assertThat(activeRecipe()).isEqualTo(recipeId);
+    }
+
+    @Test
+    void activeExperimentKeepsItsApprovedThemeAsFeedbackChanges() {
+        feedback.capture(recipeId, "The filling was too salty.", 3, "test");
+        feedback.capture(recipeId, "This tasted salty today.", 3, "test");
+        feedback.capture(recipeId, "The paneer is over salted.", 3, "test");
+        repository.approveExperiment(dishId, "owner@example.test");
+
+        feedback.capture(recipeId, "This is too sweet.", 4, "test");
+        feedback.capture(recipeId, "There is too much sugar.", 4, "test");
+        feedback.capture(recipeId, "The sauce is overly sweet.", 4, "test");
+        feedback.capture(
+                recipeId,
+                "It was sweeter than expected.",
+                4,
+                "test"
+        );
+
+        ExperimentResponse active = repository.experiment(dishId);
+        assertThat(active.status()).isEqualTo(ExperimentStatus.ACTIVE);
+        assertThat(active.theme()).isEqualTo("Too salty");
+        assertThat(active.themeCount()).isEqualTo(3);
+        assertThat(active.feedbackCount()).isEqualTo(7);
+        assertThat(activeRecipe()).isEqualTo(recipeId);
+    }
+
+    @Test
     void feedbackRejectsRecipeThatIsNotTheDishActiveVersion() {
         String inactive = recipeId + "-inactive";
         jdbc.sql("""
@@ -154,6 +226,13 @@ class FeedbackExperimentIntegrationTest {
     private String activeRecipe() {
         return jdbc.sql("SELECT active_recipe_version_id FROM dishes WHERE id = :dish")
                 .param("dish", dishId)
+                .query(String.class)
+                .single();
+    }
+
+    private String activeRecipe(String selectedDishId) {
+        return jdbc.sql("SELECT active_recipe_version_id FROM dishes WHERE id = :dish")
+                .param("dish", selectedDishId)
                 .query(String.class)
                 .single();
     }

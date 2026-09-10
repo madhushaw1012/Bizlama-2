@@ -3,7 +3,6 @@ package com.bizlama.api.experiment;
 import com.bizlama.api.config.JdbcTimestamp;
 import com.bizlama.api.config.WorkspaceProperties;
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
@@ -40,7 +39,12 @@ public class FeedbackExperimentService {
             new ThemeRule(
                     "Too sweet",
                     "Sweetness adjustment",
-                    List.of("too sweet", "too much sugar"),
+                    List.of(
+                            "too sweet",
+                            "too much sugar",
+                            "overly sweet",
+                            "sweeter than expected"
+                    ),
                     false
             ),
             new ThemeRule(
@@ -62,10 +66,35 @@ public class FeedbackExperimentService {
         this.workspace = workspace;
     }
 
+    /**
+     * Reconciles feedback that entered through a migration or import rather
+     * than the live capture service. Creating a proposal remains deterministic
+     * and never changes the active recipe.
+     */
+    @Transactional
+    public void reconcileDish(String dishId) {
+        String recipeVersionId = jdbc.sql("""
+                        SELECT active_recipe_version_id
+                        FROM dishes
+                        WHERE id = :dish
+                          AND kitchen_id = :kitchen
+                          AND active = TRUE
+                          AND active_recipe_version_id IS NOT NULL
+                        """)
+                .param("dish", dishId)
+                .param("kitchen", workspace.kitchenId())
+                .query(String.class)
+                .optional()
+                .orElse(null);
+        if (recipeVersionId != null) {
+            refresh(recipeVersionId);
+        }
+    }
+
     @Transactional(propagation = Propagation.MANDATORY)
     public void refresh(String recipeVersionId) {
         RecipeContext context = jdbc.sql("""
-                        SELECT recipe.dish_id, dish.name
+                        SELECT recipe.dish_id
                         FROM recipe_versions recipe
                         JOIN dishes dish
                           ON dish.id = recipe.dish_id
@@ -75,12 +104,12 @@ public class FeedbackExperimentService {
                           AND recipe.active = TRUE
                           AND dish.active = TRUE
                           AND dish.active_recipe_version_id = recipe.id
+                        FOR UPDATE
                         """)
                 .param("recipe", recipeVersionId)
                 .param("kitchen", workspace.kitchenId())
                 .query((rs, row) -> new RecipeContext(
-                        rs.getString("dish_id"),
-                        rs.getString("name")
+                        rs.getString("dish_id")
                 ))
                 .optional()
                 .orElseThrow(() -> new IllegalStateException(
@@ -103,7 +132,7 @@ public class FeedbackExperimentService {
                 .list();
         ThemeScore score = score(evidence);
         ExistingExperiment existing = jdbc.sql("""
-                        SELECT id, status
+                        SELECT id, status, theme
                         FROM recipe_experiments
                         WHERE dish_id = :dish
                           AND recipe_version_id = :recipe
@@ -120,27 +149,29 @@ public class FeedbackExperimentService {
                 .param("kitchen", workspace.kitchenId())
                 .query((rs, row) -> new ExistingExperiment(
                         rs.getString("id"),
-                        rs.getString("status")
+                        rs.getString("status"),
+                        rs.getString("theme")
                 ))
                 .optional()
                 .orElse(null);
 
+        if (existing != null && "ACTIVE".equals(existing.status())) {
+            updateFixedExperimentCounts(existing, evidence);
+            return;
+        }
         if (score.count() < FEEDBACK_THRESHOLD) {
             if (existing != null) {
-                updateCounts(existing, score, evidence.size());
+                cancelProposal(existing, evidence);
             }
             return;
         }
         if (existing != null) {
-            updateCounts(existing, score, evidence.size());
+            updateProposal(existing, score, evidence.size());
             return;
         }
 
         Instant now = Instant.now();
-        String id = "EXP-" + UUID.nameUUIDFromBytes((
-                workspace.kitchenId() + "|" + context.dishId() + "|"
-                        + recipeVersionId + "|" + score.rule().theme()
-        ).getBytes(StandardCharsets.UTF_8));
+        String id = "EXP-" + UUID.randomUUID();
         jdbc.sql("""
                         INSERT INTO recipe_experiments
                         (id, dish_id, recipe_version_id, theme, theme_count,
@@ -166,30 +197,64 @@ public class FeedbackExperimentService {
                 .update();
     }
 
-    private void updateCounts(
+    private void updateFixedExperimentCounts(
+            ExistingExperiment existing,
+            List<FeedbackEvidence> evidence
+    ) {
+        int themeCount = countForTheme(existing.theme(), evidence);
+        Instant now = Instant.now();
+        jdbc.sql("""
+                        UPDATE recipe_experiments
+                        SET theme_count = :themeCount,
+                            feedback_count = :feedbackCount,
+                            updated_at = :now,
+                            version = version + 1
+                        WHERE id = :id
+                          AND kitchen_id = :kitchen
+                          AND (theme_count <> :themeCount
+                               OR feedback_count <> :feedbackCount)
+                        """)
+                .param("themeCount", themeCount)
+                .param("feedbackCount", evidence.size())
+                .param("now", JdbcTimestamp.utc(now))
+                .param("id", existing.id())
+                .param("kitchen", workspace.kitchenId())
+                .update();
+    }
+
+    private void cancelProposal(
+            ExistingExperiment existing,
+            List<FeedbackEvidence> evidence
+    ) {
+        Instant now = Instant.now();
+        jdbc.sql("""
+                        UPDATE recipe_experiments
+                        SET status = 'CANCELLED',
+                            theme_count = :themeCount,
+                            feedback_count = :feedbackCount,
+                            updated_at = :now,
+                            completed_at = :now,
+                            decision_reason =
+                              'Feedback evidence fell below proposal threshold.',
+                            version = version + 1
+                        WHERE id = :id
+                          AND kitchen_id = :kitchen
+                          AND status = 'PROPOSED'
+                        """)
+                .param("themeCount", countForTheme(existing.theme(), evidence))
+                .param("feedbackCount", evidence.size())
+                .param("now", JdbcTimestamp.utc(now))
+                .param("id", existing.id())
+                .param("kitchen", workspace.kitchenId())
+                .update();
+    }
+
+    private void updateProposal(
             ExistingExperiment existing,
             ThemeScore score,
             int feedbackCount
     ) {
         Instant now = Instant.now();
-        if ("ACTIVE".equals(existing.status())) {
-            jdbc.sql("""
-                            UPDATE recipe_experiments
-                            SET theme_count = :themeCount,
-                                feedback_count = :feedbackCount,
-                                updated_at = :now,
-                                version = version + 1
-                            WHERE id = :id
-                              AND kitchen_id = :kitchen
-                            """)
-                    .param("themeCount", score.count())
-                    .param("feedbackCount", feedbackCount)
-                    .param("now", JdbcTimestamp.utc(now))
-                    .param("id", existing.id())
-                    .param("kitchen", workspace.kitchenId())
-                    .update();
-            return;
-        }
         jdbc.sql("""
                         UPDATE recipe_experiments
                         SET theme = :theme,
@@ -203,6 +268,12 @@ public class FeedbackExperimentService {
                             version = version + 1
                         WHERE id = :id
                           AND kitchen_id = :kitchen
+                          AND (theme <> :theme
+                               OR theme_count <> :themeCount
+                               OR feedback_count <> :feedbackCount
+                               OR metric_name <> :metric
+                               OR current_value <> 0
+                               OR proposed_value <> 1)
                         """)
                 .param("theme", score.rule().theme())
                 .param("themeCount", score.count())
@@ -218,15 +289,31 @@ public class FeedbackExperimentService {
         ThemeRule best = THEMES.getLast();
         int bestCount = 0;
         for (ThemeRule rule : THEMES) {
-            int count = (int) evidence.stream()
-                    .filter(rule::matches)
-                    .count();
+            int count = count(rule, evidence);
             if (count > bestCount) {
                 best = rule;
                 bestCount = count;
             }
         }
         return new ThemeScore(best, bestCount);
+    }
+
+    private static int countForTheme(
+            String theme,
+            List<FeedbackEvidence> evidence
+    ) {
+        return THEMES.stream()
+                .filter(rule -> rule.theme().equals(theme))
+                .findFirst()
+                .map(rule -> count(rule, evidence))
+                .orElse(0);
+    }
+
+    private static int count(
+            ThemeRule rule,
+            List<FeedbackEvidence> evidence
+    ) {
+        return (int) evidence.stream().filter(rule::matches).count();
     }
 
     record FeedbackEvidence(String text, int rating) {
@@ -252,9 +339,13 @@ public class FeedbackExperimentService {
         }
     }
 
-    private record RecipeContext(String dishId, String dishName) {
+    private record RecipeContext(String dishId) {
     }
 
-    private record ExistingExperiment(String id, String status) {
+    private record ExistingExperiment(
+            String id,
+            String status,
+            String theme
+    ) {
     }
 }

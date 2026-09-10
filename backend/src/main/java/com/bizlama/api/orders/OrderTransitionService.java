@@ -69,8 +69,10 @@ public class OrderTransitionService {
                             + current + " to " + target + "."
             );
         }
-        if (target == Order.Status.READY || target == Order.Status.COMPLETED) {
-            assertReadyEvidence(kitchenId, locationId, orderId, changedAt);
+        if (target == Order.Status.DONE
+                && productionActionId != null
+                && !productionActionId.isBlank()) {
+            assertDoneEvidence(kitchenId, locationId, orderId, changedAt);
         }
 
         int changed = jdbc.sql("""
@@ -145,7 +147,7 @@ public class OrderTransitionService {
         ));
     }
 
-    private void assertReadyEvidence(
+    private void assertDoneEvidence(
             String kitchenId,
             String locationId,
             String orderId,
@@ -200,7 +202,7 @@ public class OrderTransitionService {
                 || evidence.incompleteLines() != 0
                 || evidence.uncoveredLines() != 0) {
             throw new OrderTransitionConflictException(
-                    "Order cannot become READY until every line is fully prepared "
+                    "Order cannot become DONE until every line is fully prepared "
                             + "and backed by completed durable production actions "
                             + "(lines=" + evidence.totalLines()
                             + ", incomplete=" + evidence.incompleteLines()
@@ -213,11 +215,9 @@ public class OrderTransitionService {
         return switch (current) {
             case QUEUED -> target == Order.Status.PREPARING
                     || target == Order.Status.CANCELLED;
-            case PREPARING -> target == Order.Status.READY
+            case PREPARING -> target == Order.Status.DONE
                     || target == Order.Status.CANCELLED;
-            case READY -> target == Order.Status.COMPLETED
-                    || target == Order.Status.CANCELLED;
-            case COMPLETED, CANCELLED -> false;
+            case DONE, CANCELLED -> false;
         };
     }
 

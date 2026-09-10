@@ -22,6 +22,10 @@ spring:
 
 
 bizlama:
+  web:
+    cors:
+      allowed-origin-patterns: ${BIZLAMA_CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:*,http://127.0.0.1:*}
+
   auth:
     mode: ${BIZLAMA_AUTH_MODE:local}
     owner-email: ${BIZLAMA_OWNER_EMAIL:owner@bizlama.local}
@@ -48,9 +52,17 @@ bizlama:
     local-directory: ${BIZLAMA_RECEIPT_DIRECTORY:./.data/receipts}
     bucket: ${BIZLAMA_RECEIPTS_BUCKET:}
     readiness-object: ${BIZLAMA_RECEIPTS_READINESS_OBJECT:.well-known/bizlama-receipt-readiness}
-    ai-enabled: ${BIZLAMA_VERTEX_AI_ENABLED:false}
-    model: ${BIZLAMA_VERTEX_MODEL:gemini-2.5-flash}
     max-size-bytes: ${BIZLAMA_RECEIPT_MAX_BYTES:10485760}
+    ai:
+      enabled: ${BIZLAMA_VERTEX_AI_ENABLED:false}
+      project-id: ${BIZLAMA_GCP_PROJECT_ID:}
+      location: ${BIZLAMA_VERTEX_LOCATION:global}
+      model: ${BIZLAMA_VERTEX_MODEL:gemini-2.5-flash}
+      timeout: ${BIZLAMA_RECEIPT_AI_TIMEOUT:PT30S}
+      queue-timeout: ${BIZLAMA_RECEIPT_AI_QUEUE_TIMEOUT:PT0.25S}
+      max-concurrent: ${BIZLAMA_RECEIPT_AI_MAX_CONCURRENT:2}
+      max-attempts: ${BIZLAMA_RECEIPT_AI_MAX_ATTEMPTS:2}
+      max-output-tokens: ${BIZLAMA_RECEIPT_AI_MAX_OUTPUT_TOKENS:4096}
 
   outbox:
     dispatch-enabled: ${BIZLAMA_OUTBOX_DISPATCH_ENABLED:false}

@@ -14,8 +14,7 @@ public record Order (
     public enum Status {
        QUEUED,
        PREPARING,
-       READY,
-       COMPLETED,
+       DONE,
         CANCELLED
     }
     public record OrderItem (

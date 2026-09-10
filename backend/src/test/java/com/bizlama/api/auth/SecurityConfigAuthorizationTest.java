@@ -4,15 +4,19 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.any;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.bizlama.api.config.WebConfig;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.boot.test.util.TestPropertyValues;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.mock.web.MockServletContext;
@@ -47,7 +51,11 @@ class SecurityConfigAuthorizationTest {
     void setUp() {
         context = new AnnotationConfigWebApplicationContext();
         context.setServletContext(new MockServletContext());
-        context.register(TestConfiguration.class);
+        TestPropertyValues.of(
+                "bizlama.web.cors.allowed-origin-patterns="
+                        + "https://bizlama-api-*.asia-south1.run.app"
+        ).applyTo(context);
+        context.register(TestConfiguration.class, WebConfig.class);
         context.refresh();
 
         mockMvc = MockMvcBuilders.webAppContextSetup(context)
@@ -97,6 +105,24 @@ class SecurityConfigAuthorizationTest {
     void anonymousApiReadRequiresAuthentication() throws Exception {
         mockMvc.perform(get("/api/orders"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void configuredPreflightDoesNotRequireAuthentication() throws Exception {
+        String origin =
+                "https://bizlama-api-12345.asia-south1.run.app";
+
+        mockMvc.perform(options("/api/receipts")
+                        .header("Origin", origin)
+                        .header(
+                                "Access-Control-Request-Method",
+                                "POST"
+                        ))
+                .andExpect(status().isOk())
+                .andExpect(header().string(
+                        "Access-Control-Allow-Origin",
+                        origin
+                ));
     }
 
     @Test
@@ -225,6 +251,7 @@ class SecurityConfigAuthorizationTest {
 
         @PostMapping({
                 "/api/orders",
+                "/api/receipts",
                 "/api/recipes/dishes",
                 "/api/experiments/experiment-1/approve",
                 "/api/stock/purchases",

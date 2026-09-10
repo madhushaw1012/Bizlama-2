@@ -25,11 +25,10 @@ describe('OrdersComponent transition controls', () => {
         );
     });
 
-    it('does not offer a manual ready transition without production evidence', () => {
+    it('offers exactly the queued, preparing, and done lifecycle actions', () => {
         expect(component.nextStatus('QUEUED')).toBe('PREPARING');
-        expect(component.nextStatus('PREPARING')).toBeNull();
-        expect(component.nextStatus('READY')).toBe('COMPLETED');
-        expect(component.nextStatus('COMPLETED')).toBeNull();
+        expect(component.nextStatus('PREPARING')).toBe('DONE');
+        expect(component.nextStatus('DONE')).toBeNull();
         expect(component.nextStatus('CANCELLED')).toBeNull();
     });
 });

@@ -1,5 +1,10 @@
 package com.bizlama.api.explanations;
 
+import com.bizlama.api.ai.GeminiModelClient;
+import com.bizlama.api.ai.GeminiModelClient.Operation;
+import com.bizlama.api.ai.GeminiModelClient.TextInput;
+import com.bizlama.api.ai.GeminiRuntimeStatus;
+import com.bizlama.api.ai.GeminiRuntimeStatus.ValidationResult;
 import com.google.genai.types.Content;
 import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.Part;
@@ -15,6 +20,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -57,7 +63,8 @@ public final class VertexGeminiExplanationProvider
     private final ExplanationProperties explanationProperties;
     private final VertexExplanationProperties vertexProperties;
     private final ExplanationSupport support;
-    private final GeminiGateway gateway;
+    private final GeminiModelClient gateway;
+    private final GeminiRuntimeStatus runtimeStatus;
     private final Semaphore permits;
     private final ExecutorService executor;
 
@@ -65,13 +72,15 @@ public final class VertexGeminiExplanationProvider
             ExplanationProperties explanationProperties,
             VertexExplanationProperties vertexProperties,
             ExplanationSupport support,
-            GeminiGateway gateway
+            @Qualifier("explanationGeminiModelClient") GeminiModelClient gateway,
+            GeminiRuntimeStatus runtimeStatus
     ) {
         this(
                 explanationProperties,
                 vertexProperties,
                 support,
                 gateway,
+                runtimeStatus,
                 Executors.newVirtualThreadPerTaskExecutor()
         );
     }
@@ -80,13 +89,15 @@ public final class VertexGeminiExplanationProvider
             ExplanationProperties explanationProperties,
             VertexExplanationProperties vertexProperties,
             ExplanationSupport support,
-            GeminiGateway gateway,
+            GeminiModelClient gateway,
+            GeminiRuntimeStatus runtimeStatus,
             ExecutorService executor
     ) {
         this.explanationProperties = explanationProperties;
         this.vertexProperties = vertexProperties;
         this.support = support;
         this.gateway = gateway;
+        this.runtimeStatus = runtimeStatus;
         this.executor = executor;
         this.permits = new Semaphore(
                 vertexProperties.maxConcurrent(),
@@ -105,6 +116,31 @@ public final class VertexGeminiExplanationProvider
 
     @Override
     public RecommendationExplanation.Content explain(Request request)
+            throws Exception {
+        long started = System.nanoTime();
+        try {
+            RecommendationExplanation.Content content = generate(request);
+            runtimeStatus.succeeded(
+                    Operation.RECOMMENDATION_EXPLANATION,
+                    vertexProperties.model(),
+                    GeminiRuntimeStatus.elapsedMillis(started)
+            );
+            return content;
+        } catch (Exception failure) {
+            runtimeStatus.failed(
+                    Operation.RECOMMENDATION_EXPLANATION,
+                    vertexProperties.model(),
+                    GeminiRuntimeStatus.elapsedMillis(started),
+                    failure instanceof IllegalArgumentException
+                            ? ValidationResult.FAILED
+                            : ValidationResult.NOT_RUN,
+                    failure
+            );
+            throw failure;
+        }
+    }
+
+    private RecommendationExplanation.Content generate(Request request)
             throws Exception {
         if (request.canonicalInput().length()
                 > explanationProperties.maxInputChars()) {
@@ -139,11 +175,12 @@ public final class VertexGeminiExplanationProvider
         try {
             future = executor.submit(() -> {
                 try {
-                    return gateway.generate(
+                    return gateway.generate(new GeminiModelClient.Request(
+                            Operation.RECOMMENDATION_EXPLANATION,
                             vertexProperties.model(),
-                            prompt,
+                            new TextInput(prompt),
                             configuration
-                    );
+                    ));
                 } finally {
                     permits.release();
                 }

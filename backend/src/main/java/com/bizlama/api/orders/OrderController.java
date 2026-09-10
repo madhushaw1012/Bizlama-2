@@ -1,9 +1,6 @@
 package com.bizlama.api.orders;
 
-import java.math.BigDecimal;
-import java.time.Instant;
 import java.util.List;
-import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -20,9 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.bizlama.api.common.PageResponse;
-import com.bizlama.api.domain.Dish;
 import com.bizlama.api.domain.Order;
-import com.bizlama.api.domain.Order.OrderItem;
 import com.bizlama.api.domain.OrderListItem;
 import com.bizlama.api.domain.OrderSummary;
 import com.bizlama.api.store.OperationalRepository;
@@ -38,9 +33,14 @@ import jakarta.validation.constraints.Positive;
 public class OrderController {
 
     private final OperationalRepository store;
+    private final OrderApplicationService orders;
 
-    public OrderController(OperationalRepository store) {
+    public OrderController(
+            OperationalRepository store,
+            OrderApplicationService orders
+    ) {
         this.store = store;
+        this.orders = orders;
     }
 
     @GetMapping
@@ -98,57 +98,13 @@ public class OrderController {
     @ResponseStatus(HttpStatus.CREATED)
     public Order create(
             @Valid @RequestBody CreateOrderRequest request) {
-
-        List<OrderItem> items = request.items()
+        return orders.create(request.items()
                 .stream()
-                .map(item -> {
-                    Dish dish = store.dish(item.dishId())
-                            .orElseThrow(() ->
-                                    new ResponseStatusException(
-                                            HttpStatus.NOT_FOUND,
-                                            "Dish not found: "+ item.dishId()));
-
-                    String recipeVersionId = dish.activeRecipeVersionId();
-                    if (recipeVersionId == null
-                            || store.recipe(recipeVersionId).isEmpty()) {
-                        throw new ResponseStatusException(
-                                HttpStatus.UNPROCESSABLE_ENTITY,
-                                "Dish has no active recipe: " + dish.name()
-                        );
-                    }
-
-                    return new OrderItem(
-                            dish.id(),
-                            recipeVersionId,
-                            item.quantity(),
-                            dish.price()
-                    );
-                })
-                .toList();
-
-        BigDecimal total = items.stream()
-                .map(item ->
-                        item.unitPrice()
-                                .multiply(
-                                        BigDecimal.valueOf(item.quantity())
-                                ))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        String id = "ORD-"
-                + UUID.randomUUID()
-                        .toString()
-                        .substring(0, 8)
-                        .toUpperCase();
-
-        return store.saveOrder(
-                new Order(
-                        id,
-                        items,
-                        total,
-                        Order.Status.QUEUED,
-                        Instant.now()
-                )
-        );
+                .map(item -> new OrderApplicationService.Line(
+                        item.dishId(),
+                        item.quantity()
+                ))
+                .toList());
     }
 
     public record CreateOrderRequest(

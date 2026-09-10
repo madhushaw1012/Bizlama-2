@@ -10,5 +10,6 @@ export interface Experiment {
     proposedValue: number;
     unit: string;
     testDurationDays: number;
+    approvedAt: string | null;
     status: ExperimentStatus;
 }

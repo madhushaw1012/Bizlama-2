@@ -1,7 +1,16 @@
 export type KitchenEventType =
     'PURCHASE' |
     'PRODUCTION' |
-    'WASTE';
+    'WASTE' |
+    'ORDER' |
+    'FEEDBACK';
+
+export type KitchenEventIntent =
+    'INVENTORY_UPDATE' |
+    'ORDER_CAPTURE' |
+    'FEEDBACK_CAPTURE' |
+    'UNKNOWN';
+
 
 export interface ParsedKitchenEvent {
     type: KitchenEventType;
@@ -12,16 +21,22 @@ export interface ParsedKitchenEvent {
     confidence: number;
     summary: string;
     decisionReason: string;
+    intent: KitchenEventIntent;
+    expiresAt: string | null;
+    note: string | null;
 }
 
 export interface ParseKitchenEventResponse {
-    proposalId: string;
+    proposalId: string | null;
     version: number;
     riskTier: 'LOW' | 'MEDIUM' | 'HIGH';
-    expiresAt: string;
+    expiresAt: string | null;
     events: ParsedKitchenEvent[];
     requiresConfirmation: boolean;
     autoApplied: false;
+    intent: KitchenEventIntent;
+    confidence: number;
+    clarification: string | null;
 }
 
 export interface ConfirmKitchenEventRequest {

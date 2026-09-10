@@ -21,6 +21,7 @@ describe('ExperimentsApiService', () => {
         proposedValue: 16,
         unit: 'g',
         testDurationDays: 7,
+        approvedAt: null,
         status: 'PROPOSED'
     };
 

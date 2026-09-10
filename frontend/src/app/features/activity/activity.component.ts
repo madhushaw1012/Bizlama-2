@@ -56,6 +56,14 @@ export class ActivityComponent implements OnInit {
 
         this.eventsApi.parse(statement).subscribe({
             next: (response) => {
+                if (!response.requiresConfirmation || !response.proposalId) {
+                    this.error.set(
+                        response.clarification ??
+                        'Clarify the activity and try again.'
+                    );
+                    this.isProcessing.set(false);
+                    return;
+                }
                 this.proposal.set(response);
                 this.parsedEvents.set(response.events);
                 this.confirmationIdempotencyKey =
@@ -76,7 +84,7 @@ export class ActivityComponent implements OnInit {
         const proposal = this.proposal();
         const events = this.parsedEvents();
 
-        if (!proposal || !events.length) {
+        if (!proposal || !proposal.proposalId || !events.length) {
             return;
         }
 
@@ -119,7 +127,7 @@ export class ActivityComponent implements OnInit {
     protected discardEvent(): void {
         const proposal = this.proposal();
 
-        if (!proposal) {
+        if (!proposal || !proposal.proposalId) {
             return;
         }
 

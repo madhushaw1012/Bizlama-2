@@ -172,8 +172,8 @@ export class OrdersComponent implements OnInit {
         if (status === 'QUEUED') {
             return 'PREPARING';
         }
-        if (status === 'READY') {
-            return 'COMPLETED';
+        if (status === 'PREPARING') {
+            return 'DONE';
         }
         return null;
     }

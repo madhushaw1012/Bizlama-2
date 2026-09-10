@@ -94,7 +94,7 @@ class TenantScopeMigrationCompatibilityTest {
         latest.migrate();
 
         assertThat(latest.info().current().getVersion().getVersion())
-                .isEqualTo("18");
+                .isEqualTo("21");
         assertThat(scope(jdbc, "activity_events", activity))
                 .containsExactly(
                         "kitchen-legacy-unattributed",

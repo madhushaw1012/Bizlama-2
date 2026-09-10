@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.bizlama.api.domain.OrderSummary;
 import com.bizlama.api.domain.StockMovement;
+import com.bizlama.api.experiment.ExperimentService;
 import com.bizlama.api.events.ConfirmKitchenEventRequest;
 import com.bizlama.api.events.KitchenEventProposalService;
 import com.bizlama.api.events.KitchenEventType;
@@ -13,6 +14,7 @@ import com.bizlama.api.explanations.ExplanationPersistence;
 import com.bizlama.api.explanations.ExplanationPersistence.CacheKey;
 import com.bizlama.api.explanations.ExplanationProvider.Metadata;
 import com.bizlama.api.explanations.ExplanationProvider.Snapshot;
+import com.bizlama.api.feedback.FeedbackService;
 import com.bizlama.api.receipts.ReceiptReviewService;
 import com.bizlama.api.receipts.ReceiptView;
 import com.bizlama.api.stock.ExpiryProvenance;
@@ -52,7 +54,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
         webEnvironment = SpringBootTest.WebEnvironment.MOCK,
         properties = {
             "bizlama.outbox.dispatch-enabled=false",
-            "bizlama.receipts.ai-enabled=false",
+            "bizlama.receipts.ai.enabled=false",
             "bizlama.receipts.storage-mode=local",
             "bizlama.receipts.local-directory=/tmp/bizlama-receipt-tests"
         }
@@ -90,6 +92,12 @@ class PostgreSqlIntegrityIntegrationTest {
 
     @Autowired
     private OperationalRepository repository;
+    @Autowired
+    private FeedbackService feedback;
+
+    @Autowired
+    private ExperimentService experiments;
+
 
     @Autowired
     private ReceiptReviewService receipts;
@@ -101,17 +109,17 @@ class PostgreSqlIntegrityIntegrationTest {
     private ExplanationPersistence explanations;
 
     @Test
-    void cleanPostgreSqlStartupAppliesV1ThroughV18AndInstallsIntegrityConstraints() {
+    void cleanPostgreSqlStartupAppliesV1ThroughV21AndInstallsIntegrityConstraints() {
         flyway.validate();
 
         assertThat(flyway.info().current().getVersion().getVersion())
-                .isEqualTo("18");
+                .isEqualTo("21");
         assertThat(Arrays.stream(flyway.info().applied())
                 .map(info -> info.getVersion().getVersion()))
                 .containsExactly(
                         "1", "2", "3", "4", "5", "6",
                         "7", "8", "9", "10", "11", "12", "13", "14",
-                        "15", "16", "17", "18");
+                        "15", "16", "17", "18", "19", "20", "21");
 
         List<String> constraints = jdbc.sql("""
                         SELECT conname
@@ -170,6 +178,92 @@ class PostgreSqlIntegrityIntegrationTest {
                 .update())
                 .isInstanceOf(DataAccessException.class)
                 .hasMessageContaining("ck_stock_lots_quantity_remaining_nonnegative");
+    }
+
+    @Test
+    void persistedFeedbackCreatesAProposalWithoutChangingThePermanentRecipe() {
+        var proposed = experiments.getExperiment("demo-mango-lassi");
+
+        assertThat(proposed.dish()).isEqualTo("Mango Lassi");
+        assertThat(proposed.theme()).isEqualTo("Too sweet");
+        assertThat(proposed.themeCount()).isEqualTo(3);
+        assertThat(proposed.feedbackCount()).isEqualTo(5);
+        assertThat(proposed.status().name()).isEqualTo("PROPOSED");
+        assertThat(jdbc.sql("""
+                        SELECT active_recipe_version_id
+                        FROM dishes WHERE id = 'demo-mango-lassi'
+                        """)
+                .query(String.class)
+                .single()).isEqualTo("demo-mango-lassi-v1");
+    }
+
+    @Test
+    void feedbackRollsBackWhenItsRequiredActivityWriteFails() {
+        String dish = id("feedback-rollback-dish");
+        String recipe = id("feedback-rollback-recipe");
+        Instant createdAt = Instant.now().minusSeconds(60);
+        jdbc.sql("""
+                        INSERT INTO dishes
+                        (id, name, price, active, created_at, kitchen_id)
+                        VALUES
+                        (:id, 'Feedback rollback dish', 10.00, TRUE,
+                         :createdAt, :kitchen)
+                        """)
+                .param("id", dish)
+                .param("createdAt", postgresTime(createdAt))
+                .param("kitchen", KITCHEN)
+                .update();
+        jdbc.sql("""
+                        INSERT INTO recipe_versions
+                        (id, dish_id, version_number, change_reason, active,
+                         active_dish_guard, created_at, effective_at,
+                         yield_quantity, yield_unit, kitchen_id)
+                        VALUES
+                        (:id, :dish, 1, 'Feedback rollback fixture', TRUE,
+                         :dish, :createdAt, :createdAt, 1.000, 'each', :kitchen)
+                        """)
+                .param("id", recipe)
+                .param("dish", dish)
+                .param("createdAt", postgresTime(createdAt))
+                .param("kitchen", KITCHEN)
+                .update();
+        jdbc.sql("""
+                        UPDATE dishes
+                        SET active_recipe_version_id = :recipe
+                        WHERE id = :dish AND kitchen_id = :kitchen
+                        """)
+                .param("recipe", recipe)
+                .param("dish", dish)
+                .param("kitchen", KITCHEN)
+                .update();
+
+        jdbc.sql("""
+                        ALTER TABLE activity_events
+                        DROP CONSTRAINT IF EXISTS ck_test_feedback_activity_failure
+                        """).update();
+        jdbc.sql("""
+                        ALTER TABLE activity_events
+                        ADD CONSTRAINT ck_test_feedback_activity_failure
+                        CHECK (event_type <> 'Feedback')
+                        """).update();
+        try {
+            assertThatThrownBy(() ->
+                    feedback.capture(recipe, "Too salty.", 3, "rollback-test"))
+                    .isInstanceOf(DataAccessException.class);
+
+            assertThat(jdbc.sql("""
+                            SELECT COUNT(*) FROM feedback
+                            WHERE recipe_id = :recipe
+                            """)
+                    .param("recipe", recipe)
+                    .query(Long.class)
+                    .single()).isZero();
+        } finally {
+            jdbc.sql("""
+                            ALTER TABLE activity_events
+                            DROP CONSTRAINT IF EXISTS ck_test_feedback_activity_failure
+                            """).update();
+        }
     }
     @Test
     void concurrentRecipeActivationLeavesExactlyOneActiveVersion() throws Exception {
@@ -515,7 +609,7 @@ class PostgreSqlIntegrityIntegrationTest {
     void revenueCountsCompletedOrdersAndNeverCancelledOrders() {
         OrderSummary before = repository.orderSummary();
         Instant now = Instant.now();
-        insertOrder(id("completed"), new BigDecimal("101.25"), "COMPLETED", now);
+        insertOrder(id("done"), new BigDecimal("101.25"), "DONE", now);
         insertOrder(id("cancelled"), new BigDecimal("999.99"), "CANCELLED", now);
 
         OrderSummary after = repository.orderSummary();

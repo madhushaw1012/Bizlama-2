@@ -82,4 +82,19 @@ public class FeedbackService {
         experiments.refresh(recipe.id());
         return saved;
     }
+
+    @Transactional
+    public void delete(String id) {
+        Feedback existing = repository.feedbackById(id).orElse(null);
+        if (existing == null) {
+            return;
+        }
+        RecipeVersion recipe = repository.recipe(existing.recipeId())
+                .orElse(null);
+
+        repository.deleteFeedback(id);
+        if (recipe != null) {
+            experiments.reconcileDish(recipe.dishId());
+        }
+    }
 }

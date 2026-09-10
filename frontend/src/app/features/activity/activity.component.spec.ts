@@ -14,6 +14,9 @@ describe('ActivityComponent confirmation attempts', () => {
             expiresAt: '2026-09-09T17:00:00Z',
             requiresConfirmation: true,
             autoApplied: false,
+            intent: 'INVENTORY_UPDATE',
+            confidence: 0.95,
+            clarification: null,
             events: [{
                 type: 'PURCHASE',
                 item: 'Paneer',
@@ -22,7 +25,10 @@ describe('ActivityComponent confirmation attempts', () => {
                 unit: 'each',
                 confidence: 0.95,
                 summary: 'Bought paneer',
-                decisionReason: 'Parsed purchase'
+                decisionReason: 'Parsed purchase',
+                intent: 'INVENTORY_UPDATE',
+                expiresAt: null,
+                note: null
             }]
         };
         const eventsApi = jasmine.createSpyObj<KitchenEventsApiService>(

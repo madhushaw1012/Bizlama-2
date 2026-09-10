@@ -4,9 +4,9 @@
             <p class="eyebrow">Kitchen activity</p>
             <h1>Record what happened</h1>
             <p class="screen-intro">
-                Describe one or several purchases, completed dishes, or waste entries
-                in ordinary language. You will always see uncertain interpretations
-                before they are saved.
+                Describe an inventory change, order, or customer feedback
+                in ordinary language. You will always see the structured interpretation
+                before anything is saved.
             </p>
         </div>
     </header>
@@ -16,7 +16,7 @@
             <div class="capture-heading">
                 <span class="feature-icon">+</span>
                 <div>
-                    <p class="eyebrow">AI-assisted entry</p>
+                    <p class="eyebrow">Structured entry</p>
                     <h2>Quick kitchen update</h2>
                 </div>
             </div>
@@ -58,11 +58,12 @@
             <section class="review-card batch-review">
                 <div class="review-copy">
                     <p class="eyebrow">
-                        {{ parsedEvents().length }}
+                        {{ currentProposal.intent }} · {{ parsedEvents().length }}
                         {{ parsedEvents().length === 1 ? 'update' : 'updates' }}
                         ready for confirmation
                     </p>
                     <p>
+                        {{ currentProposal.confidence | percent: '1.0-0' }} confidence ·
                         {{ currentProposal.riskTier }} risk · proposal version
                         {{ currentProposal.version }} · expires
                         {{ currentProposal.expiresAt | date: 'short' }}
@@ -77,6 +78,9 @@
                                 {{ event.item }}
                                 ({{ event.quantity }} {{ event.unit }})
                             </p>
+                            @if (event.expiresAt) {
+                            <p>Expires {{ event.expiresAt | date: 'mediumDate' }}</p>
+                            }
                         </div>
                         <div>
                             <strong>Check</strong>
@@ -109,9 +113,10 @@
                     in one update.
                 </p>
                 <ul>
-                    <li>Start with the action: bought, made, or wasted.</li>
+                    <li>Start with bought, order, or a dish name for feedback.</li>
                     <li>Add the exact quantity and unit.</li>
-                    <li>Use the item name stored for this kitchen.</li>
+                    <li>Include YYYY-MM-DD expiry dates and feedback ratings explicitly.</li>
+                    <li>Use the ingredient or dish name stored for this kitchen.</li>
                 </ul>
             </article>
 

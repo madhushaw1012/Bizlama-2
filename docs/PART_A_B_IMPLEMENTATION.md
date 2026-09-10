@@ -356,7 +356,7 @@ VERIFIED_LOCAL. Live GCP verification remains BLOCKED.
 
 | Gate | Exact result |
 |---|---|
-| Backend clean Maven test | 140 tests; 0 failures; 0 errors; 0 skipped; BUILD SUCCESS; 25.865 s |
+| Backend clean Maven test | 149 tests; 0 failures; 0 errors; 0 skipped; BUILD SUCCESS; 1:49 min (fresh dependency cache) |
 | PostgreSQL focused integrity | PostgreSQL 16.15; 10 tests passed; Flyway V1–V18 |
 | H2 V13 upgrade compatibility | 1 test passed; terminal version 18 |
 | Frontend TypeScript specs | exit 0 |
@@ -367,7 +367,7 @@ VERIFIED_LOCAL. Live GCP verification remains BLOCKED.
 | Compose HTTP/auth | readiness UP; four SPA routes 200; protected orders API 401 |
 | Compose persistence | marker survived app and PostgreSQL container recreation |
 | Local GCP static validation | exit 0; no cloud API called |
-| Post-hygiene backend compile | 141 Java 21 sources compiled; BUILD SUCCESS; 4.080 s |
+| Current backend source compile | 144 Java 21 sources compiled within the clean parent gate |
 
 The browser runner required a no-sandbox wrapper only inside a credential-free,
 disposable Docker test container because this host denies Chromium user namespaces.
@@ -394,7 +394,7 @@ Application/runtime browser configuration was not changed.
 | Dataflow | signal-engine Maven module, pipeline/mappings, synthetic replay, BigQuery schema/reconciliation, image, metadata, and operating guide |
 | GCP | bootstrap/deploy/rollback/smoke, Cloud Build, lifecycle, SQL/schedules, reconciliation controls, monitoring, IAM/secrets, and incident/replay runbooks |
 | Local runtime | Dockerfile, compose.yaml, environment example, ignore rules, README, and this ledger |
-| Tests | 40 backend Java test sources, 11 Angular spec files, and 5 signal-engine Java test sources |
+| Tests | 42 backend Java test sources, 11 Angular spec files, and 5 signal-engine Java test sources |
 
 The removed synchronous BigQuery publisher package is intentionally replaced by the
 transactional outbox plus independent raw and Dataflow consumers.
@@ -492,3 +492,60 @@ covered by the PostgreSQL suite.
    tighten delayed reconciliation.
 3. Execute the documented GCP apply/smoke/reconciliation sequence in an approved
    project, capture trace/cost evidence, and only then promote VERIFIED_GCP.
+
+## Post-implementation deployment reconciliation — 2026-09-10
+
+### Main comparison
+
+- The clean `feat/inital_eval` branch at `1d2701f` and fetched
+  `origin/main` at `6b1006e` diverge from merge-base `306d06e`.
+- Main contains one unique commit: `feat: allowing cors, origin paths, OPTIONS
+  method`. Its Spring Security CORS enablement and anonymous API preflight
+  allowance were already present on this branch.
+- Main's remaining change was one project-specific Cloud Run URL plus explicit
+  `OPTIONS` in MVC. `OPTIONS` was retained; the URL was superseded by validated
+  configuration. Local defaults allow only loopback development origins, while
+  cloud deployment derives the configured API service's regional Cloud Run
+  pattern or accepts one explicit HTTPS browser origin. Wildcard-only origins
+  such as `https://*` are rejected by both application and deployment validation.
+
+### Vertex receipt extraction repair
+
+- The previous extractor constructed an environment-dependent Google Gen AI
+  client. Deployment did not select the Vertex backend, enable receipt AI, pass
+  its model, or grant Vertex IAM for receipt-only use; therefore it was not
+  deployably functional.
+- The API now constructs one reusable client explicitly with Vertex enabled,
+  configured project/location, attached Application Default Credentials, stable
+  `v1` API, retryable status bounds, HTTP timeout, queue timeout, concurrency
+  cap, and output-token cap.
+- Receipt content stays private in GCS and is sent by `gs://` URI and validated
+  MIME type. The model receives a response JSON schema and untrusted-data
+  instruction. The application independently validates object shape, item count,
+  text lengths, dates, positive quantities, non-negative prices/totals, and
+  confidence range before persistence. No expiry is requested or inferred.
+- `VERTEX_RECEIPTS_ENABLED` is independent of explanation enablement.
+  Receipt-only deployment grants the API runtime `roles/aiplatform.user`; its
+  existing receipt-bucket `roles/storage.objectUser` covers private evidence.
+  Provider, schema, normalization, or persistence failures retain the object and
+  enter durable retryable manual review.
+- Settings now reads the nested receipt-AI property and accurately reports
+  configured Vertex mode without claiming live connectivity.
+
+### Verification evidence
+
+| Gate | Exact result |
+|---|---|
+| Main refresh/comparison | `git fetch origin main`; fetched/local main both `6b1006e`; one main-only commit |
+| Focused CORS/Vertex gate | 30 tests; 0 failures/errors/skips; BUILD SUCCESS; 8.127 s |
+| Post-hardening CORS gate | 14 tests; 0 failures/errors/skips; wildcard-only Java configuration rejected |
+| Status/PostgreSQL repair gate | 11 tests; 0 failures/errors/skips; PostgreSQL 16.15; Flyway V18; 16.285 s |
+| Final clean backend parent | 149 tests; 0 failures/errors/skips; 144 main and 42 test sources; 1:49 min with fresh dependency cache |
+| GCP static and receipt-only dry run | exit 0; Vertex role rendered; receipt flag/model/bounds and derived CORS origin rendered; wildcard-only origin rejected; no cloud call |
+| Multi-stage image | built successfully; frontend bundle and Java 21 API packaged |
+| Isolated runtime | readiness UP; SPA 200; protected API 401; allowed preflight 200; untrusted preflight 403; non-root `bizlama`; Flyway V18 |
+| Cleanup | exact temporary containers, images, volumes, and network removed |
+
+Status remains `VERIFIED_LOCAL`. An actual Vertex receipt request and deployed
+Cloud Run preflight remain `BLOCKED` until the approved project, credentials,
+tooling, billing, and private test receipt are available.

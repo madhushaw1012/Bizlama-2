@@ -508,7 +508,7 @@ public class RecommendationActionService {
                         recommendation.kitchenId(),
                         recommendation.locationId(),
                         orderId,
-                        Order.Status.READY,
+                        Order.Status.DONE,
                         actionAt,
                         actor,
                         "All lines prepared by recommendation production action "

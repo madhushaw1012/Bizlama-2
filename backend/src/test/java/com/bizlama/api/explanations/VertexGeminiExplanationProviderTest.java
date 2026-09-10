@@ -3,8 +3,10 @@ package com.bizlama.api.explanations;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.bizlama.api.ai.GeminiModelClient;
+import com.bizlama.api.ai.GeminiModelClient.TextInput;
+import com.bizlama.api.ai.GeminiRuntimeStatus;
 import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.google.genai.types.GenerateContentConfig;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
@@ -33,11 +35,11 @@ class VertexGeminiExplanationProviderTest {
 
         assertThat(result.summary())
                 .isEqualTo("Purchase the calculated quantity.");
-        assertThat(gateway.configuration.maxOutputTokens())
+        assertThat(gateway.request.configuration().maxOutputTokens())
                 .contains(256);
-        assertThat(gateway.configuration.responseMimeType())
+        assertThat(gateway.request.configuration().responseMimeType())
                 .contains("application/json");
-        assertThat(gateway.prompt)
+        assertThat(((TextInput) gateway.request.input()).prompt())
                 .contains("Immutable redacted snapshot JSON")
                 .contains("hash-1");
         provider.close();
@@ -60,7 +62,7 @@ class VertexGeminiExplanationProviderTest {
 
     @Test
     void totalTimeoutBoundsSlowGateway() {
-        GeminiGateway slow = (model, prompt, configuration) -> {
+        GeminiModelClient slow = request -> {
             try {
                 Thread.sleep(500);
             } catch (InterruptedException interrupted) {
@@ -85,6 +87,8 @@ class VertexGeminiExplanationProviderTest {
                 Duration.ofMillis(750)
         );
 
+        assertThat(VertexGeminiGateway.httpOptions(properties).apiVersion())
+                .contains("v1");
         assertThat(VertexGeminiGateway.httpOptions(properties).timeout())
                 .contains(750);
         assertThat(VertexGeminiGateway.httpOptions(properties)
@@ -95,7 +99,7 @@ class VertexGeminiExplanationProviderTest {
     }
 
     private VertexGeminiExplanationProvider provider(
-            GeminiGateway gateway,
+            GeminiModelClient gateway,
             Duration timeout
     ) {
         ExplanationProperties explanation =
@@ -110,6 +114,7 @@ class VertexGeminiExplanationProviderTest {
                 vertex,
                 support,
                 gateway,
+                new GeminiRuntimeStatus(),
                 java.util.concurrent.Executors
                         .newVirtualThreadPerTaskExecutor()
         );
@@ -161,23 +166,17 @@ class VertexGeminiExplanationProviderTest {
         );
     }
 
-    private static final class CapturingGateway implements GeminiGateway {
+    private static final class CapturingGateway implements GeminiModelClient {
         private final String response;
-        private String prompt;
-        private GenerateContentConfig configuration;
+        private GeminiModelClient.Request request;
 
         private CapturingGateway(String response) {
             this.response = response;
         }
 
         @Override
-        public String generate(
-                String model,
-                String value,
-                GenerateContentConfig config
-        ) {
-            this.prompt = value;
-            this.configuration = config;
+        public String generate(GeminiModelClient.Request request) {
+            this.request = request;
             return response;
         }
     }

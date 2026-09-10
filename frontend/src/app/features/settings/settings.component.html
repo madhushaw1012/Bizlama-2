@@ -59,7 +59,10 @@
 
                     <span>
                         <strong>{{ item.name }}</strong>
-                        <small>{{ item.provider }} · {{ item.detail }}</small>
+                        <small>
+                            {{ item.provider }} @if (item.state) { · {{ item.state }} }
+                            · {{ item.detail }}
+                        </small>
                     </span>
                 </div>
                 }

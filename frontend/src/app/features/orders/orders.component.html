@@ -34,7 +34,7 @@
         </article>
 
         <article>
-            <span>Ready</span>
+            <span>Done</span>
             <strong>{{ totals.readyOrders | number }}</strong>
         </article>
 
@@ -64,8 +64,7 @@
                     <option value="all">All orders</option>
                     <option value="QUEUED">Queued</option>
                     <option value="PREPARING">Preparing</option>
-                    <option value="READY">Ready</option>
-                    <option value="COMPLETED">Completed</option>
+                    <option value="DONE">Done</option>
                     <option value="CANCELLED">Cancelled</option>
                 </select>
             </label>
@@ -94,7 +93,7 @@
                         <td>{{ order.itemCount }}</td>
                         <td>
                             <span class="status-pill"
-                                [class.good]="order.status === 'READY' || order.status === 'COMPLETED'">
+                                [class.good]="order.status === 'DONE'">
                                 {{ statusLabel(order.status) }}
                             </span>
                         </td>
@@ -183,10 +182,6 @@
         <button class="action-button wide-action" type="button" (click)="advanceOrder(order)">
             Mark as {{ statusLabel(next) }}
         </button>
-        } @else if (order.status === 'PREPARING') {
-        <p class="inline-notice">
-            Ready is recorded after the approved preparation action is completed.
-        </p>
         }
     </aside>
     }
